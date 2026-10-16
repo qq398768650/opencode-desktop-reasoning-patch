@@ -9,6 +9,7 @@
 //   node apply-patch.mjs            # dry-run，只报告会改什么
 //   node apply-patch.mjs --write    # 真正写入 app.asar（写前请先完全退出桌面端）
 //   node apply-patch.mjs --out x.asar  # 只把打好的 asar 写到 x.asar（不动安装目录、不关进程）
+//   node apply-patch.mjs --restore  # 用官方备份 app.asar.bak-<版本> 还原 app.asar（撤销补丁）
 // 备份约定：<install>/resources/app.asar.bak-<官方版本号> 保存官方原版（本脚本会按需自动创建）
 import fs from 'node:fs';
 import path from 'node:path';
@@ -193,6 +194,16 @@ const pkg = JSON.parse(readEntry(parseAsar(fs.readFileSync(ASAR)), '/package.jso
 const ver = pkg.version;
 const BAK = path.join(res, `app.asar.bak-${ver}`);
 console.log('当前版本:', ver, '(' + pkg.name + ')');
+
+// --restore：用官方备份还原（撤销补丁）。必须放在「补丁源」判定之前，否则会被判成「已打过补丁」而拒绝。
+if (process.argv.includes('--restore')) {
+  if (!fs.existsSync(BAK)) throw new Error('没找到官方备份 ' + BAK + '，无法还原（可以从 opencode 安装包或 updater 的 pending 包里取官方 app.asar）');
+  const wasRunning = stopApp();          // 运行中覆盖会崩，必须先关
+  fs.copyFileSync(BAK, ASAR);
+  console.log('已还原官方原版:', ASAR, '(' + fs.statSync(ASAR).size + ' 字节，来源 ' + path.basename(BAK) + ')');
+  if (wasRunning) startApp(dir);
+  process.exit(0);
+}
 
 const cur = fs.readFileSync(ASAR);
 const curParsed = parseAsar(cur);

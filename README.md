@@ -65,6 +65,9 @@ node verify.mjs
 
 # 3b. 不想开调试口时，可以先做静态校验（直接查 asar 里两组补丁的标记）
 node verify.mjs --static
+
+# 4. 想撤销补丁、回到官方原版（自动：关桌面端 → 盖回备份 → 再开回来）
+node apply-patch.mjs --restore
 ```
 
 只想先把产物打出来看/手动部署（不碰安装目录、不关桌面端）：
@@ -131,7 +134,7 @@ node apply-patch.mjs --out patched.asar
 - 验证产物时注意：asar 里 `node_modules/@lydell/node-pty-win32-x64/*` 这类文件是 `app.asar.unpacked` 的，它们的 `offset` 指向外部文件，用 asar 内的数据去比对 integrity **必然 mismatch**——原版也一样，别误判成补丁打坏了。
 - 启动失败时看 `%APPDATA%\ai.opencode.desktop\logs\<最新时间戳>\renderer.log`，里面 `fatal renderer error` 的堆栈 `行:列` 直接指向出错 chunk 的哪一处替换。
 - 改 asar **必须完全退出桌面端**，热重载（Ctrl+R）会白屏（主进程缓存了旧 asar 头，偏移已变）。
-- 官方原版备份命名 `app.asar.bak-<版本号>`；脚本发现已打过补丁又没有备份时会拒绝执行。
+- 官方原版备份命名 `app.asar.bak-<版本号>`；脚本发现已打过补丁又没有备份时会拒绝执行。撤销补丁用 `node apply-patch.mjs --restore`（同样自动关/开桌面端）。
 - 测试脚本改动时不要直接 `--write`：`--write` 会 `taskkill` 掉真实桌面端。用假安装目录跑 dry-run / `--out`：
   ```bash
   LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar

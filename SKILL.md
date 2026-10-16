@@ -34,6 +34,9 @@ node apply-patch.mjs --write
 
 # 3. 等它起来后验证：点一下能收起/展开，历史思考块默认折叠
 node verify.mjs
+
+# 4. 想撤销补丁、回到官方原版（自动关桌面端 → 用 app.asar.bak-<版本号> 盖回 → 再开回来）
+node apply-patch.mjs --restore
 ```
 
 只把产物打出来、不动安装目录也不关进程（离线检查 / 手动部署用）：
