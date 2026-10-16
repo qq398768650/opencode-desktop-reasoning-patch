@@ -1,0 +1,264 @@
+// apply-patch.mjs — 给 opencode 桌面端 app.asar 的「思考」组件打补丁
+//   目标行为：流式中展开 → 思考一结束自动折成一行 → 点标题/底部「收起 ▴」/双击空白都能收；手动开合状态跨重挂载保留。
+// 用法：
+//   node apply-patch.mjs            # dry-run，只报告会改什么
+//   node apply-patch.mjs --write    # 真正写入 app.asar（写前请先完全退出桌面端）
+// 备份约定：<install>/resources/app.asar.bak-<官方版本号> 保存官方原版（本脚本会按需自动创建）
+import fs from 'node:fs';
+import path from 'node:path';
+import crypto from 'node:crypto';
+import { execSync, spawn } from 'node:child_process';
+
+const WRITE = process.argv.includes('--write');
+const DEBUG_PORT = 9222;
+
+function sleep(ms) { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch { } }
+function appRunning() {
+  try { return execSync('tasklist /FI "IMAGENAME eq OpenCode.exe" /NH', { encoding: 'utf8' }).includes('OpenCode.exe'); } catch { return false; }
+}
+function stopApp() {
+  if (!appRunning()) return false;
+  console.log('关闭桌面端…');
+  try { execSync('taskkill /IM OpenCode.exe /F', { stdio: 'ignore' }); } catch { }
+  for (let i = 0; i < 60 && appRunning(); i++) sleep(500);
+  if (appRunning()) throw new Error('桌面端没关掉，请手动退出后重试');
+  console.log('已退出');
+  return true;
+}
+function startApp(dir) {
+  const exe = path.join(dir, 'OpenCode.exe');
+  const p = spawn(exe, ['--remote-debugging-port=' + DEBUG_PORT], { detached: true, stdio: 'ignore' });
+  p.unref();
+  console.log('已启动 pid', p.pid, '调试口 127.0.0.1:' + DEBUG_PORT);
+}
+
+// ---------- 1) 找安装目录 ----------
+function findInstall() {
+  const programs = path.join(process.env.LOCALAPPDATA, 'Programs');
+  const hits = [];
+  if (fs.existsSync(programs)) {
+    for (const d of fs.readdirSync(programs)) {
+      const dir = path.join(programs, d);
+      const res = path.join(dir, 'resources');
+      // 认 opencode：目录里有 OpenCode.exe，且 resources 下有 app.asar
+      if (fs.existsSync(path.join(dir, 'OpenCode.exe')) && fs.existsSync(path.join(res, 'app.asar'))) hits.push({ dir, res });
+    }
+  }
+  if (!hits.length) throw new Error('没找到 opencode 桌面端安装目录（%LOCALAPPDATA%\\Programs\\*\\OpenCode.exe + resources\\app.asar）');
+  if (hits.length > 1) console.log('注意：发现多个候选：', hits.map((h) => h.dir).join(' | '));
+  return hits[0];
+}
+
+// ---------- 2) asar 读写 ----------
+function parseAsar(buf) {
+  const pickleSize = buf.readUInt32LE(4);
+  const jsonLen = buf.readUInt32LE(12);
+  const dataStart = 8 + pickleSize;
+  const header = JSON.parse(buf.subarray(16, 16 + jsonLen).toString('utf8'));
+  return { buf, jsonLen, dataStart, header, data: buf.subarray(dataStart) };
+}
+function walkFiles(node, cb, prefix = '') {
+  for (const k of Object.keys(node.files)) {
+    const c = node.files[k];
+    const np = prefix + '/' + k;
+    if (c.files) walkFiles(c, cb, np);
+    else cb(np, c);
+  }
+}
+function readEntry(a, p) {
+  let hit = null;
+  walkFiles(a.header, (np, c) => { if (np === p) hit = c; });
+  if (!hit) throw new Error('asar 内找不到 ' + p);
+  const off = a.dataStart + Number(hit.offset);
+  return a.buf.subarray(off, off + hit.size);
+}
+function rebuildAsar(a, targetPath, newContent) {
+  const entry = (() => { let hit = null; walkFiles(a.header, (np, c) => { if (np === targetPath) hit = c; }); return hit; })();
+  const targetOffset = Number(entry.offset);
+  const oldSize = entry.size;
+  const delta = newContent.length - oldSize;
+
+  entry.integrity.hash = crypto.createHash('sha256').update(newContent).digest('hex');
+  const bs = entry.integrity.blockSize;
+  const blocks = [];
+  for (let o = 0; o < newContent.length; o += bs) blocks.push(crypto.createHash('sha256').update(newContent.subarray(o, Math.min(o + bs, newContent.length))).digest('hex'));
+  entry.integrity.blocks = blocks;
+  entry.size = newContent.length;
+
+  let shifted = 0;
+  walkFiles(a.header, (np, c) => {
+    if (typeof c.offset === 'undefined') return;
+    const o = Number(c.offset);
+    if (o > targetOffset) { c.offset = String(o + delta); shifted++; }
+  });
+
+  const jsonStr = JSON.stringify(a.header);
+  const jsonBytes = Buffer.byteLength(jsonStr);
+  // 关键：header JSON 长度必须与原版一致（不足用空格补齐）。
+  // 改短会让 dataStart 前移 → Electron 启动失败（进程直接退出，连日志目录都不建）。
+  if (jsonBytes > a.jsonLen) throw new Error(`header JSON 变长了（${jsonBytes} > ${a.jsonLen}），需要人工处理`);
+  const padded = jsonStr.padEnd(a.jsonLen, ' ');
+  // 关键2：dataStart 必须与原版完全一致 —— 别自己按对齐公式重算。
+  // 2.0.30 原版是 4 字节对齐（jsonLen 2172835 → dataStart 2172852，尾部 1 个 NUL），
+  // 按 8 字节对齐重算会得到 2172856（+4）→ Electron 直接「加载应用程序时发生错误」。
+  const dataStart = a.dataStart;
+  const padLen = dataStart - 16 - a.jsonLen;
+  if (padLen < 0) throw new Error(`原版 dataStart(${dataStart}) 容不下 jsonLen(${a.jsonLen})，需要人工处理`);
+  const head = Buffer.alloc(dataStart);
+  head.writeUInt32LE(4, 0);
+  head.writeUInt32LE(dataStart - 8, 4);
+  head.writeUInt32LE(dataStart - 12, 8);
+  head.writeUInt32LE(a.jsonLen, 12);
+  head.write(padded, 16, 'utf8');
+  // 原版尾部 padding 字节照抄（通常是 NUL）
+  a.buf.copy(head, 16 + a.jsonLen, 16 + a.jsonLen, dataStart);
+
+  const newData = Buffer.concat([a.data.subarray(0, targetOffset), newContent, a.data.subarray(targetOffset + oldSize)]);
+  console.log(`  target ${targetPath}: ${oldSize} → ${newContent.length} (delta ${delta})，平移 ${shifted} 个 offset`);
+  return Buffer.concat([head, newData]);
+}
+
+// ---------- 3) 补丁内容 ----------
+// 组1 = i 的名字，组2 = 第一个局部变量（2.0.29 里是 e，props），组3 = 第二个（n，本地 store）
+const P1_FIND = /([A-Za-z_$][\w$]*)=\(\)=>([A-Za-z_$][\w$]*)\.open\?\?([A-Za-z_$][\w$]*)\.open\?\?\2\.defaultOpen\?\?!1/;
+const P4_FIND = 'get open(){return e.disclosure.value(t().ref.partID)??(e.timelineDetail?e.timelineDetail().thinking.details===`expanded`:void 0)}';
+const P4_REPL = 'get open(){return e.disclosure.value(t().ref.partID)}';
+const P8_FIND = 'onOpenChange:t=>{r(`open`,t),e.onOpenChange?.(t),e.onContentRendered?.()}';
+const P8_REPL = 'onOpenChange:t=>{if(!_stream$()||!t)_rx$.set(e.id,t);(_stream$()&&t)||r(`open`,t),e.onContentRendered?.()}';
+const P2_FIND = 'x(()=>U(n,`data-timeline-part-id`,e.id)),n})()}';
+const P2_REPL = 'x(()=>U(n,`data-timeline-part-id`,e.id)),(()=>{' +
+  'var _foot$=document.createElement(`button`);' +
+  '_foot$.setAttribute(`type`,`button`);' +
+  '_foot$.setAttribute(`data-reasoning-collapse`,``);' +
+  '_foot$.style.cssText=`display:block;width:100%;cursor:pointer;background:none;border:0;padding:2px 0 0;margin:0;font:inherit;color:inherit;opacity:.55;text-align:center;letter-spacing:.08em`;' +
+  '_foot$.textContent=`收起 ▴`;' +
+  'var _collapse$=()=>{if(_stream$())return;_rx$.set(e.id,!1),r(`open`,!1),e.onOpenChange?.(!1),e.onContentRendered?.()};' +
+  // 折叠时机：思考结束后不按时间收；等「同一条消息里出现我之后的 part」（= 下一段思考开始，或正文结果出来了）再收一次。
+  // 手动开合过的块（_rx$ 里有记录）不自动收。
+  'var _pending$=!1;' +
+  'var _mo$=new MutationObserver(()=>{if(!n.isConnected){_mo$.disconnect();return}if(_pending$)return;_pending$=!0;setTimeout(()=>{_pending$=!1;if(!n.isConnected){_mo$.disconnect();return}if(!_rx$.has(e.id)&&!_stream$()&&_later$()){_mo$.disconnect(),_collapse$()}},200)});' +
+  // 必须在挂载后的 effect 里观察：IIFE 执行时 n 还没进 DOM，parentElement 是空的。
+  'Y(()=>{if(!_rx$.has(e.id)&&!_stream$()&&_later$()){_collapse$();return}_mo$.observe(document.body,{childList:!0,subtree:!0})});' +
+  '_foot$.addEventListener(`click`,t=>{t.preventDefault(),t.stopPropagation(),_collapse$()});' +
+  'n.addEventListener(`dblclick`,t=>{if(t.target&&t.target.closest&&t.target.closest(`a,input,textarea,select,button`))return;_collapse$()});' +
+  'x(()=>{_foot$.style.display=i()&&!_stream$()?``:`none`}),n.appendChild(_foot$)' +
+  '})(),n})()}';
+
+function replaceOnce(content, find, repl, label) {
+  const s = content.toString('utf8');
+  if (find instanceof RegExp) {
+    const m = s.match(find);
+    if (!m) throw new Error(label + '：锚点没找到（新版本代码结构可能变了，需要先看 bundle 再改锚点）');
+    const out = s.replace(find, repl(m));
+    console.log(`  ${label}: OK`);
+    return Buffer.from(out, 'utf8');
+  }
+  const i = s.indexOf(find);
+  if (i < 0) throw new Error(label + '：锚点没找到（新版本代码结构可能变了）');
+  if (s.indexOf(find, i + 1) !== -1) throw new Error(label + '：锚点不唯一');
+  const out = s.slice(0, i) + repl + s.slice(i + find.length);
+  console.log(`  ${label}: OK`);
+  return Buffer.from(out, 'utf8');
+}
+
+// ---------- 4) 主流程 ----------
+const { dir, res } = findInstall();
+const ASAR = path.join(res, 'app.asar');
+console.log('安装目录:', dir);
+
+const pkg = JSON.parse(readEntry(parseAsar(fs.readFileSync(ASAR)), '/package.json').toString('utf8'));
+const ver = pkg.version;
+const BAK = path.join(res, `app.asar.bak-${ver}`);
+console.log('当前版本:', ver, '(' + pkg.name + ')');
+
+const cur = fs.readFileSync(ASAR);
+const curParsed = parseAsar(cur);
+let source, sourceLabel;
+if (fs.existsSync(BAK)) {
+  source = fs.readFileSync(BAK);
+  sourceLabel = BAK;
+} else {
+  const already = readEntry(curParsed, '/out/renderer/assets/' + findTargetChunk(curParsed)).toString('utf8').includes('_rx$');
+  if (already) throw new Error('当前 app.asar 看起来已经打过补丁，但没有官方备份 ' + BAK + '，请先手工还原官方版');
+  source = cur;
+  sourceLabel = ASAR + '（首次运行：将把它存为官方备份）';
+}
+console.log('补丁源:', sourceLabel);
+
+function findTargetChunk(a) {
+  let hit = null;
+  walkFiles(a.header, (np, c) => {
+    if (hit) return;
+    if (!/^\/out\/renderer\/assets\/.*\.js$/.test(np)) return;
+    if (!c.offset) return;
+    const off = a.dataStart + Number(c.offset);
+    const txt = a.buf.subarray(off, off + Math.min(c.size, 4_000_000)).toString('utf8');
+    if (P1_FIND.test(txt)) hit = np.slice('/out/renderer/assets/'.length);
+  });
+  if (!hit) throw new Error('在所有 renderer chunk 里都没找到思考组件锚点');
+  return hit;
+}
+
+const srcParsed = parseAsar(source);
+const chunk = findTargetChunk(srcParsed);
+const targetPath = '/out/renderer/assets/' + chunk;
+console.log('目标 chunk:', targetPath);
+
+let content = Buffer.from(readEntry(srcParsed, targetPath));
+// P1：i() 改成「流式中恒展开；非流式只看记账表（_rx$）」，并顺手把 _rx$ / _stream$ 声明进同一个 let 列表。
+// 注意：必须一次替换搞定（之前分 P1/P1b 两步，P1b 的正则只有 2 个分组却按 3 个解构 → 写出了 `undefined.open`，直接让渲染进程崩）。
+{
+  const s = content.toString('utf8');
+  const m = s.match(P1_FIND);
+  if (!m) throw new Error('P1：锚点没找到（新版本代码结构可能变了，需要先看 bundle 再改锚点）');
+  const name = m[1];        // i
+  const propsVar = m[2];    // e（组件 props）
+  const storeVar = m[3];    // n（本地 store）
+  // props 变量名以紧邻的 memo 为准（`a=N(()=>e.streaming?...`），避免硬编码
+  const after = s.slice(m.index, m.index + 240);
+  const pv = (after.match(/([A-Za-z_$][\w$]*)\.streaming\?/) || [])[1] || propsVar;
+  const decl = `_rx$=globalThis.__ocReasoningOpen||(globalThis.__ocReasoningOpen=new Map()),` +
+    `_stream$=()=>!!(${pv}.streaming&&${pv}.content?.time?.completed===void 0),` +
+    // 「我后面有没有出现下一段思考（带收起按钮的块）或正文块」—— 工具调用行（含 .tool-collapsible）不算，
+    // 否则每轮思考完一调工具就立刻收起。定位「我」用 part id 比对，不依赖父节点（每个 part 的父节点都不同）。
+    `_later$=()=>{var _a$=[...document.querySelectorAll(\`[data-timeline-part-id]\`)],_k$=-1,_j$;` +
+    `for(_j$=0;_j$<_a$.length;_j$++)if(_a$[_j$].getAttribute(\`data-timeline-part-id\`)===${propsVar}.id)_k$=_j$;` +
+    `for(_j$=_k$+1;_j$<_a$.length;_j$++){var _e$=_a$[_j$];` +
+    `if(_e$.getAttribute(\`data-timeline-part-id\`)===${propsVar}.id)continue;` +
+    `if(_e$.querySelector(\`[data-reasoning-collapse]\`))return!0;` +
+    `if(_e$.querySelector(\`.tool-collapsible\`))continue;` +
+    `if((_e$.textContent||\`\`).trim())return!0}return!1},`;
+  // 默认值：流式中展开；用户手动开合过就听用户的；否则看「后面有没有下一段思考/正文」——
+  // 有就折叠，没有就**保持展开**（这就是「思考结束后不立刻折」的关键：思考结束组件会重挂载，
+  // 那时 _rx$ 里没有记录，必须靠 !_later$() 撑住展开，否则默认值 false 会立刻收）。
+  const newI = `${name}=()=>_stream$()?!0:(${storeVar}.open!==void 0?!!${storeVar}.open:(_rx$.has(${propsVar}.id)?!!_rx$.get(${propsVar}.id):!_later$()))`;
+  content = Buffer.from(s.slice(0, m.index) + decl + newI + s.slice(m.index + m[0].length), 'utf8');
+  console.log('  P1 (i() + _rx$/_stream$ 声明): OK');
+}
+content = replaceOnce(content, P4_FIND, P4_REPL, 'P4 (去掉设置兜底)');
+content = replaceOnce(content, P8_FIND, P8_REPL, 'P8 (open 状态记账)');
+content = replaceOnce(content, P2_FIND, P2_REPL, 'P2+P3 (收起按钮/双击/结束时折叠)');
+
+// 自检：产物里绝不能出现 undefined.xxx（变量名没接上），也不能缺声明
+{
+  const txt = content.toString('utf8');
+  if (/undefined\.[A-Za-z_$]/.test(txt)) throw new Error('补丁自检失败：产物里出现 undefined.<prop>，变量名没接上');
+  if (!txt.includes('_stream$=()=>!!(')) throw new Error('补丁自检失败：_stream$ 声明缺失');
+  if (!txt.includes('_later$') || !txt.includes('MutationObserver')) throw new Error('补丁自检失败：折叠时机（下一段 part 出现才收）逻辑缺失');
+  if (!txt.includes('!_later$()')) throw new Error('补丁自检失败：i() 缺少「后面没有下一段思考/正文时保持展开」的默认值');
+  if (txt.includes('_graceTimer$')) throw new Error('补丁自检失败：还残留按时间折叠的 grace 逻辑');
+  if (!txt.includes('data-reasoning-collapse')) throw new Error('补丁自检失败：收起按钮没生成');
+}
+
+const out = rebuildAsar(srcParsed, targetPath, content);
+console.log('新 app.asar 大小:', out.length, '(原', source.length, ')');
+
+if (WRITE) {
+  const wasRunning = stopApp();          // 必须先关：运行中覆盖 asar 会把当前实例搞崩
+  if (!fs.existsSync(BAK)) { fs.copyFileSync(ASAR, BAK); console.log('已保存官方备份:', BAK); }
+  fs.writeFileSync(ASAR, out);
+  console.log('已写入:', ASAR);
+  if (wasRunning) startApp(dir);         // 关过就自动开回来（带调试口，供 verify.mjs 用）
+} else {
+  console.log('dry-run（加 --write 才真正写入）');
+}
