@@ -1,8 +1,14 @@
-// apply-patch.mjs — 给 opencode 桌面端 app.asar 的「思考」组件打补丁
-//   目标行为：流式中展开 → 思考一结束自动折成一行 → 点标题/底部「收起 ▴」/双击空白都能收；手动开合状态跨重挂载保留。
+// apply-patch.mjs — 给 opencode 桌面端 app.asar 打两组补丁
+//   [1] 思考折叠（route-*.js 里的思考组件）
+//       目标行为：流式中展开 → 思考一结束不立刻折 → 下一段思考开始或正文结果出来时折成一行 →
+//                 点标题/底部「收起 ▴」/双击空白都能收；手动开合状态跨重挂载保留。
+//   [2] 首页会话行「删除」按钮（main-*.js 主 bundle）
+//       把官方写死关掉的会话行按钮开关打开，并把该按钮从「归档」改造成「删除」
+//       （内联 SVG 垃圾桶图标 + 复用官方删除确认框）。
 // 用法：
 //   node apply-patch.mjs            # dry-run，只报告会改什么
 //   node apply-patch.mjs --write    # 真正写入 app.asar（写前请先完全退出桌面端）
+//   node apply-patch.mjs --out x.asar  # 只把打好的 asar 写到 x.asar（不动安装目录、不关进程）
 // 备份约定：<install>/resources/app.asar.bak-<官方版本号> 保存官方原版（本脚本会按需自动创建）
 import fs from 'node:fs';
 import path from 'node:path';
@@ -10,6 +16,7 @@ import crypto from 'node:crypto';
 import { execSync, spawn } from 'node:child_process';
 
 const WRITE = process.argv.includes('--write');
+const OUT = (() => { const i = process.argv.indexOf('--out'); return i >= 0 ? process.argv[i + 1] : null; })();
 const DEBUG_PORT = 9222;
 
 function sleep(ms) { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch { } }
@@ -144,6 +151,22 @@ const P2_REPL = 'x(()=>U(n,`data-timeline-part-id`,e.id)),(()=>{' +
   'x(()=>{_foot$.style.display=i()&&!_stream$()?``:`none`}),n.appendChild(_foot$)' +
   '})(),n})()}';
 
+// ---------- 3b) 首页会话行「删除」按钮 ----------
+// 官方代码里写死 SHOW_HOME_SESSION_ARCHIVE=false（编译后是 `bie=!1`），所以每行的操作按钮从不渲染。
+// 本补丁把开关打开，并把它从「归档」改造成「删除」（归档后端已禁用；删除复用官方 onDeleteSession + 确认框）。
+// 之所以改这个「被禁用的归档按钮」而不是自己造一个：它的 DOM 位置、悬停显隐、tooltip、无障碍标签都是现成的。
+const D_ANCHOR = 'e.onArchiveSession(e.record.session)';   // 定位目标 chunk 用（同时也是 D6 的锚点）
+// 官方图标集里没有 trash/delete，内联一个 SVG 垃圾桶
+const D_TRASH_ICON = 'ZZ_TRASH_ICON=()=>{var s=document.createElementNS(`http://www.w3.org/2000/svg`,`svg`);return s.setAttribute(`viewBox`,`0 0 16 16`),s.setAttribute(`width`,`16`),s.setAttribute(`height`,`16`),s.setAttribute(`fill`,`currentColor`),s.innerHTML=`<path d="M6.4 1.8h3.2l.4 1H13v1.3H3V2.8h3l.4-1ZM3.4 5.4h9.2l-.7 8.1a1.4 1.4 0 0 1-1.4 1.3H5.5a1.4 1.4 0 0 1-1.4-1.3l-.7-8.1Zm3 1.4v5.9h1.2V6.8H6.4Zm2.9 0v5.9h1.2V6.8H9.3Z"/>`,s}';
+const D_RULES = [
+  ['D1 打开官方写死的按钮开关 + 定义垃圾桶图标', ',bie=!1,xie=500;', ',bie=!0,xie=500,' + D_TRASH_ICON + ';'],
+  ['D2 tooltip 文案 归档→删除', 'get value(){return e.language.t(`common.archive`)}', 'get value(){return e.language.t(`common.delete`)}'],
+  ['D3 动作标识 home-session-archive→delete', '`home-session-archive`', '`home-session-delete`'],
+  ['D4 图标 归档→垃圾桶', 'get icon(){return F(jP,{name:`archive`})}', 'get icon(){return F(ZZ_TRASH_ICON,{})}'],
+  ['D5 无障碍标签 归档→删除', 'get"aria-label"(){return e.language.t(`common.archive`)}', 'get"aria-label"(){return e.language.t(`common.delete`)}'],
+  ['D6 点击动作 归档→删除（复用官方确认框）', D_ANCHOR, 'e.onDeleteSession(e.server,e.record.session)'],
+];
+
 function replaceOnce(content, find, repl, label) {
   const s = content.toString('utf8');
   if (find instanceof RegExp) {
@@ -178,32 +201,50 @@ if (fs.existsSync(BAK)) {
   source = fs.readFileSync(BAK);
   sourceLabel = BAK;
 } else {
-  const already = readEntry(curParsed, '/out/renderer/assets/' + findTargetChunk(curParsed)).toString('utf8').includes('_rx$');
-  if (already) throw new Error('当前 app.asar 看起来已经打过补丁，但没有官方备份 ' + BAK + '，请先手工还原官方版');
+  const marks = [];
+  if (findChunk(curParsed, (t) => t.includes('_rx$=globalThis.__ocReasoningOpen')).length) marks.push('思考折叠');
+  if (findChunk(curParsed, (t) => t.includes('home-session-delete')).length) marks.push('首页删除按钮');
+  if (marks.length) throw new Error('当前 app.asar 看起来已经打过补丁（' + marks.join('、') + '），但没有官方备份 ' + BAK + '，请先手工还原官方版');
   source = cur;
   sourceLabel = ASAR + '（首次运行：将把它存为官方备份）';
 }
 console.log('补丁源:', sourceLabel);
 
-function findTargetChunk(a) {
-  let hit = null;
+function findChunk(a, test) {
+  const hits = [];
   walkFiles(a.header, (np, c) => {
-    if (hit) return;
     if (!/^\/out\/renderer\/assets\/.*\.js$/.test(np)) return;
     if (!c.offset) return;
     const off = a.dataStart + Number(c.offset);
     const txt = a.buf.subarray(off, off + Math.min(c.size, 4_000_000)).toString('utf8');
-    if (P1_FIND.test(txt)) hit = np.slice('/out/renderer/assets/'.length);
+    if (test(txt)) hits.push(np.slice('/out/renderer/assets/'.length));
   });
-  if (!hit) throw new Error('在所有 renderer chunk 里都没找到思考组件锚点');
-  return hit;
+  return hits;
+}
+function findTargetChunk(a) {
+  const hits = findChunk(a, (t) => P1_FIND.test(t));
+  if (!hits.length) throw new Error('在所有 renderer chunk 里都没找到思考组件锚点');
+  if (hits.length > 1) console.log('注意：思考组件锚点命中多个 chunk：' + hits.join(', '));
+  return hits[0];
+}
+function findDeleteChunk(a) {
+  const hits = findChunk(a, (t) => t.includes(D_ANCHOR));
+  if (!hits.length) throw new Error('在所有 renderer chunk 里都没找到首页会话行锚点（' + D_ANCHOR + '）');
+  if (hits.length > 1) console.log('注意：首页会话行锚点命中多个 chunk：' + hits.join(', '));
+  return hits[0];
 }
 
 const srcParsed = parseAsar(source);
 const chunk = findTargetChunk(srcParsed);
 const targetPath = '/out/renderer/assets/' + chunk;
-console.log('目标 chunk:', targetPath);
+console.log('目标 chunk [思考折叠]:', targetPath);
+const delChunk = findDeleteChunk(srcParsed);
+const delPath = '/out/renderer/assets/' + delChunk;
+console.log('目标 chunk [首页删除]:', delPath);
 
+const jobs = [];
+
+// ---- 补丁 1：思考折叠 ----
 let content = Buffer.from(readEntry(srcParsed, targetPath));
 // P1：i() 改成「流式中恒展开；非流式只看记账表（_rx$）」，并顺手把 _rx$ / _stream$ 声明进同一个 let 列表。
 // 注意：必须一次替换搞定（之前分 P1/P1b 两步，P1b 的正则只有 2 个分组却按 3 个解构 → 写出了 `undefined.open`，直接让渲染进程崩）。
@@ -250,7 +291,27 @@ content = replaceOnce(content, P2_FIND, P2_REPL, 'P2+P3 (收起按钮/双击/结
   if (!txt.includes('data-reasoning-collapse')) throw new Error('补丁自检失败：收起按钮没生成');
 }
 
-const out = rebuildAsar(srcParsed, targetPath, content);
+jobs.push({ path: targetPath, content, label: '思考折叠' });
+
+// ---- 补丁 2：首页会话行「删除」按钮 ----
+let del = Buffer.from(readEntry(srcParsed, delPath));
+for (const [label, find, repl] of D_RULES) del = replaceOnce(del, find, repl, label);
+{
+  const txt = del.toString('utf8');
+  if (!txt.includes('ZZ_TRASH_ICON')) throw new Error('补丁自检失败：垃圾桶图标没定义');
+  if (!txt.includes('home-session-delete')) throw new Error('补丁自检失败：删除按钮的 data-action 没换掉');
+  if (!txt.includes('e.onDeleteSession(e.server,e.record.session)')) throw new Error('补丁自检失败：删除动作没接上');
+  if (txt.includes('e.onArchiveSession(') || txt.includes('`home-session-archive`')) throw new Error('补丁自检失败：还残留归档动作');
+}
+jobs.push({ path: delPath, content: del, label: '首页删除按钮' });
+
+// ---- 重建 asar ----
+// 两个目标必须串行：每替换一个文件都会平移它之后所有文件的 offset，第二次要在上一次的结果上继续。
+let out = source;
+for (const j of jobs) {
+  console.log('重建 asar [' + j.label + '] …');
+  out = rebuildAsar(parseAsar(out), j.path, j.content);
+}
 console.log('新 app.asar 大小:', out.length, '(原', source.length, ')');
 
 if (WRITE) {
@@ -259,6 +320,10 @@ if (WRITE) {
   fs.writeFileSync(ASAR, out);
   console.log('已写入:', ASAR);
   if (wasRunning) startApp(dir);         // 关过就自动开回来（带调试口，供 verify.mjs 用）
+} else if (OUT) {
+  // --out <file>：只把打好的 asar 写到指定位置，不碰安装目录、不关进程（便于先离线检查产物）
+  fs.writeFileSync(OUT, out);
+  console.log('已写出补丁版 asar:', OUT);
 } else {
   console.log('dry-run（加 --write 才真正写入）');
 }

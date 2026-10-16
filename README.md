@@ -1,12 +1,20 @@
-# opencode 桌面端「思考折叠」补丁
+# opencode 桌面端补丁（思考折叠 + 首页会话删除按钮）
 
-给 [opencode](https://opencode.ai) 桌面端（Electron）的聊天「思考」块加一套官方没有的交互：
+给 [opencode](https://opencode.ai) 桌面端（Electron）加两组官方没有的交互，脚本一次全部打上。
+
+## 一、思考折叠
 
 **边想边展开 → 想完先摊着 → 下一段思考开始（或正文结果出来）时自动折成一行 → 点开还能看**
+
+## 二、首页会话删除按钮
+
+**首页每个会话行悬停时显示垃圾桶按钮 → 点击弹官方删除确认框 → 确认后删掉该会话**
 
 ---
 
 ## 效果
+
+### 思考折叠
 
 | # | 行为 |
 |---|---|
@@ -16,7 +24,15 @@
 | 4 | 展开状态下，点底部 **「收起 ▴」**、**双击空白处**、或再点标题，都能收起 |
 | 5 | 手动开合过的块**不会被自动折叠**，状态在滚动/重渲染后也不丢 |
 
-官方 2.0.x 只有「默认展开」和「默认折叠」两种静态行为，没有上面这套。
+### 首页会话删除按钮
+
+| # | 行为 |
+|---|---|
+| 1 | 首页会话行**悬停**时右侧出现垃圾桶按钮（默认隐藏，鼠标移开消失） |
+| 2 | 点击弹**官方删除确认框**，确认后会话被删除 |
+| 3 | 复用官方写死关闭的删除开关 + 官方 `onDeleteSession`，不自己实现删除逻辑；只影响首页会话行，会话页里的归档按钮不动 |
+
+官方 2.0.x 只有「默认展开」和「默认折叠」两种静态行为，没有上面第一套；首页也只有一个「归档」入口，没有删除按钮。
 
 ---
 
@@ -26,7 +42,9 @@
 - Node.js 18+
 - opencode 桌面端（Electron 版，安装目录下有 `resources\app.asar`）
 
-支持版本：**2.0.30**（2.0.29 也能用，锚点相同）。opencode 升级后 minified 代码会变，锚点失效时脚本会明确报错，需要按下面「升级后锚点找不到」更新。
+支持版本：**2.0.30**（2.0.29 的思考折叠锚点相同，但 2.0.29 里没有首页删除按钮的那段代码，会报找不到目标）。opencode 升级后 minified 代码会变，锚点失效时脚本会明确报错，需要按下面「升级后锚点找不到」更新。
+
+两组补丁是**同一次运行里全部打上**的：任一目标的锚点对不上，脚本会报错并**不写文件**（不会出现只打一半的情况）。
 
 ---
 
@@ -44,6 +62,15 @@ node apply-patch.mjs --write
 
 # 3. 验证：历史思考块默认折叠，点一下能开、再点能收
 node verify.mjs
+
+# 3b. 不想开调试口时，可以先做静态校验（直接查 asar 里两组补丁的标记）
+node verify.mjs --static
+```
+
+只想先把产物打出来看/手动部署（不碰安装目录、不关桌面端）：
+
+```bash
+node apply-patch.mjs --out patched.asar
 ```
 
 `--write` 会自动完成关/开桌面端，**不会断会话**——agent 跑在后端进程 `opencode-cli.exe serve --service` 里，和桌面窗口是两个进程。
@@ -56,7 +83,7 @@ node verify.mjs
 
 | 文件 | 作用 |
 |---|---|
-| `apply-patch.mjs` | 主脚本：找安装目录 → 定位 renderer chunk → 打 5 处补丁 → 重建 asar（含 dry-run / `--write`） |
+| `apply-patch.mjs` | 主脚本：找安装目录 → 定位两个 renderer chunk → 打两组补丁 → 重建 asar（含 dry-run / `--out` / `--write`） |
 | `restart.mjs` | 关掉再带 `--remote-debugging-port=9222` 重开桌面端 |
 | `verify.mjs` | 走 CDP 检查折叠行为，PASS 时退出码 0 |
 | `SKILL.md` | 给 opencode agent 当技能用的说明（含补丁细节、坑、锚点定位法） |
@@ -66,16 +93,33 @@ node verify.mjs
 
 ## 原理
 
-桌面端界面打包在 `<安装目录>\resources\app.asar`，真正渲染思考块的组件在某个 `/out/renderer/assets/*.js` chunk 里。脚本自动找含 `i=()=>e.open??n.open??e.defaultOpen??!1` 的那个 chunk，做 5 处替换：
+桌面端界面打包在 `<安装目录>\resources\app.asar`，真正渲染界面的组件在 `/out/renderer/assets/*.js` 里。脚本自动定位两个目标 chunk 并改写：
+
+### 思考折叠（目标 chunk：含 `i=()=>e.open??n.open??e.defaultOpen??!1` 的那个 `route-*.js`）
 
 | 标记 | 改什么 |
 |---|---|
 | **P1** | `i()`（思考块是否展开）：流式中恒 `true`；否则优先本地 store，其次全局 Map（跨重挂载记忆），都没有时回退到 `!_later$()`（后面还没下一段思考/正文 → 保持展开） |
 | **P4** | 摘掉 `get open()` 里 `?? (thinking.details === 'expanded' ? true : void 0)` 的兜底——就是它让每个思考块默认恒展开 |
 | **P8** | `onOpenChange` 把用户的开合状态记进全局 Map，并写本地 store 做即时反馈 |
-| **P2+P3** | 底部加「收起 ▴」按钮、根节点加双击空白收起；折叠时机用 `_later$()`（后面出现下一段思考或正文块时收一次），工具调用行不算「出结果」；用 `MutationObserver` 盯 `document.body`（200ms 节流，收一次就 disconnect） |
+| **P2** | 底部加「收起 ▴」按钮、根节点加双击空白收起；折叠时机用 `_later$()`（后面出现下一段思考或正文块时收一次），工具调用行不算「出结果」；用 `MutationObserver` 盯 `document.body`（200ms 节流，收一次就 disconnect） |
 
 关键点：思考结束时组件会**卸载重挂载**，所以「不主动收」是撑不住的——必须让新实例挂载时自己判断「我后面还有没有内容」，没有就保持展开。
+
+### 首页会话删除按钮（目标 chunk：含 `e.onArchiveSession(e.record.session)` 的那个 `main-*.js`）
+
+官方代码里删除按钮其实**已经写好**，只是开关被写死成关闭。脚本做 6 处替换：
+
+| 标记 | 改什么 |
+|---|---|
+| **D1** | 把开关 `nie=!1` 改成 `nie=!0`，并在同一 chunk 内定义一个内联的 16×16 垃圾桶图标组件（`ZZ_TRASH_ICON`） |
+| **D2** | 按钮文案 `common.archive` → `common.delete`（"归档"→"删除"） |
+| **D3** | 按钮 `data-action` `home-session-archive` → `home-session-delete` |
+| **D4** | 图标 `archive` → 垃圾桶 |
+| **D5** | `aria-label` `common.archive` → `common.delete` |
+| **D6** | 点击动作 `e.onArchiveSession(e.record.session)` → `e.onDeleteSession(e.server,e.record.session)`（走官方删除确认框，带 server/session 参数） |
+
+两个目标 chunk 必须**串行**重建：每替换一个文件都会平移它之后所有文件的 offset，第二个要在第一个的结果上继续。
 
 ---
 
@@ -84,24 +128,30 @@ node verify.mjs
 - **asar header 的 JSON 长度必须和原版一模一样**（不足用空格补齐）。改短会让 `dataStart` 前移 → Electron 启动失败，进程直接退出，连日志目录都不建。
 - **`dataStart` 也必须和原版完全一致**，别按对齐公式重算。2.0.30 原版是 4 字节对齐（`jsonLen` 2172835 → `dataStart` 2172852，尾部 1 个 NUL）；按 8 字节对齐重算会得到 2172856（+4），Electron 报「加载应用程序时发生错误」。
 - 字符串替换**必须自检**：曾因正则分组数对不上，写出 `undefined.open` 让渲染进程崩。
+- 验证产物时注意：asar 里 `node_modules/@lydell/node-pty-win32-x64/*` 这类文件是 `app.asar.unpacked` 的，它们的 `offset` 指向外部文件，用 asar 内的数据去比对 integrity **必然 mismatch**——原版也一样，别误判成补丁打坏了。
 - 启动失败时看 `%APPDATA%\ai.opencode.desktop\logs\<最新时间戳>\renderer.log`，里面 `fatal renderer error` 的堆栈 `行:列` 直接指向出错 chunk 的哪一处替换。
 - 改 asar **必须完全退出桌面端**，热重载（Ctrl+R）会白屏（主进程缓存了旧 asar 头，偏移已变）。
 - 官方原版备份命名 `app.asar.bak-<版本号>`；脚本发现已打过补丁又没有备份时会拒绝执行。
+- 测试脚本改动时不要直接 `--write`：`--write` 会 `taskkill` 掉真实桌面端。用假安装目录跑 dry-run / `--out`：
+  ```bash
+  LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar
+  # %LOCALAPPDATA%/Programs/@opencode-aidesktop/{OpenCode.exe, resources/app.asar}
+  ```
 
 ## 升级后锚点找不到
 
 opencode 升级后 minified 代码会变，脚本会报「锚点没找到」。此时：
 
-1. 从 asar 抽出所有 `/out/renderer/assets/*.js`，搜 `defaultOpen`、`data-timeline-part-id`、`ui.message.thought` 定位思考组件所在 chunk。
-2. 看新版 `i=()=>...`、`get open(){...}`、`onOpenChange:t=>{...}` 三处的实际写法，更新 `apply-patch.mjs` 里的 `P1_FIND / P4_FIND / P8_FIND / P2_FIND`。
-3. 重跑 dry-run，确认 5 处都 OK 再 `--write`。
+1. 从 asar 抽出所有 `/out/renderer/assets/*.js`，搜 `defaultOpen`、`data-timeline-part-id`、`ui.message.thought` 定位思考组件所在 chunk；搜 `onArchiveSession`、`home-session-archive` 定位首页会话行组件所在 chunk。
+2. 看新版 `i=()=>...`、`get open(){...}`、`onOpenChange:t=>{...}` 以及 6 处删除按钮锚点的实际写法，更新 `apply-patch.mjs` 里的 `P1_FIND / P4_FIND / P8_FIND / P2_FIND` 和 `D_RULES`。
+3. 重跑 dry-run，确认全部 OK 再 `--write`。
 
 ## 历史版本对照
 
-| opencode | 目标 chunk | asar 大小 |
-|---|---|---|
-| 2.0.29 | `/out/renderer/assets/route-4O9GzN5h.js`（350831 B） | 176333529 → ~176334560 |
-| 2.0.30 | `/out/renderer/assets/route-CPNDqx0F.js`（355075 → 356889 B） | 176341661 → 176343475 |
+| opencode | 思考折叠 chunk | 删除按钮 chunk | asar 大小 |
+|---|---|---|---|
+| 2.0.29 | `/out/renderer/assets/route-4O9GzN5h.js`（350831 B） | 无此代码 | 176333529 → ~176334560 |
+| 2.0.30 | `/out/renderer/assets/route-CPNDqx0F.js`（355075 → 356889 B） | `/out/renderer/assets/main-CfL8Gr4d.js`（1321365 → 1321786 B） | 176341661 → 176343896 |
 
 ---
 
