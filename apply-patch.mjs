@@ -330,17 +330,21 @@ let content = Buffer.from(readEntry(srcParsed, targetPath));
     // 「我后面有没有出现下一段思考（带收起按钮的块）或正文块」—— 工具调用行（含 .tool-collapsible）不算，
     // 否则每轮思考完一调工具就立刻收起。定位「我」用 part id 比对，不依赖父节点（每个 part 的父节点都不同）。
     // 两种收法：
-    //   ① 后面出现了**正文块**（这轮回复结束了）→ 直接收，不管我在哪；收的时候有 _anchor$ 补偿，下方内容不跳。
-    //   ② 后面只有**下一段思考块**（多轮思考还在继续）→ 只有我自己整块滚出视口上方（height>0 防未布局）才收，
-    //      这就是「无感折叠」：人看不见它的时候才收，看得见的时候一直摊着。
-    `_later$=()=>{var _a$=[...document.querySelectorAll(\`[data-timeline-part-id]\`)],_k$=-1,_j$;` +
+    //   ① 后面最后一块是**正文**（整轮回复真结束了，后面不会再有工具/思考）→ 直接收，不管我在哪；
+    //      收的时候有 _anchor$ 补偿，下方内容不跳。
+    //   ② 其它情况（后面是工具调用 = 还在工作中、或只有下一段思考）→ 只有我自己整块滚出视口上方
+    //      （height>0 防未布局）才收，这就是「无感折叠」：人看不见它的时候才收。
+    // 「最后一块」必须一直扫到底再判断：思考 → 正文 → 工具调用（工作中）这种，正文后面还有工具，
+    // 整轮没结束，不能因为中间出现了一句正文就把上一段思考折了。
+    `_later$=()=>{var _a$=[...document.querySelectorAll(\`[data-timeline-part-id]\`)],_k$=-1,_j$,_last$=null;` +
     `for(_j$=0;_j$<_a$.length;_j$++)if(_a$[_j$].getAttribute(\`data-timeline-part-id\`)===${propsVar}.id)_k$=_j$;` +
     `if(_k$<0)return!1;var _r$=_a$[_k$].getBoundingClientRect(),_off$=_r$.height>0&&_r$.bottom<=0;` +
     `for(_j$=_k$+1;_j$<_a$.length;_j$++){var _e$=_a$[_j$];` +
     `if(_e$.getAttribute(\`data-timeline-part-id\`)===${propsVar}.id)continue;` +
-    `if(_e$.querySelector(\`[data-reasoning-collapse]\`)){if(_off$)return!0;continue}` +
-    `if(_e$.querySelector(\`.tool-collapsible\`))continue;` +
-    `if((_e$.textContent||\`\`).trim())return!0}return!1},`;
+    `if(_e$.querySelector(\`[data-reasoning-collapse]\`))continue;` +
+    `if(_e$.querySelector(\`.tool-collapsible\`)){_last$=\`tool\`;continue}` +
+    `if((_e$.textContent||\`\`).trim())_last$=\`body\`}` +
+    `return _last$===\`body\`?!0:_off$},`;
   // 默认值：流式中展开；用户手动开合过就听用户的；否则看「后面有没有下一段思考/正文」——
   // 有就折叠，没有就**保持展开**（这就是「思考结束后不立刻折」的关键：思考结束组件会重挂载，
   // 那时 _rx$ 里没有记录，必须靠 !_later$() 撑住展开，否则默认值 false 会立刻收）。
