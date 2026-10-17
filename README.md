@@ -10,6 +10,8 @@
 
 **首页每个会话行悬停时显示垃圾桶按钮 → 点击弹官方删除确认框 → 确认后删掉该会话**
 
+**一次删很多**：按住 **Shift** 点垃圾桶 = 跳过确认框直接删；或进**多选删除**模式（右下角悬浮条点「多选删除」，或会话右键菜单选「多选删除」），点行勾选（可「全选」），按「删除 N」→「确认删除 N」一次删完。
+
 ---
 
 ## 效果
@@ -30,7 +32,9 @@
 |---|---|
 | 1 | 首页会话行**悬停**时右侧出现垃圾桶按钮（默认隐藏，鼠标移开消失） |
 | 2 | 点击弹**官方删除确认框**，确认后会话被删除 |
-| 3 | 复用官方写死关闭的删除开关 + 官方 `onDeleteSession`，不自己实现删除逻辑；只影响首页会话行，会话页里的归档按钮不动 |
+| 3 | **Shift + 点击**垃圾桶 = 跳过确认框，直接删 |
+| 4 | 右下角悬浮条「多选删除」（或会话右键菜单「多选删除」）进多选模式：点行勾选、可「全选」，「删除 N」按一次变「确认删除 N」，再按就批量删完 |
+| 5 | 复用官方写死关闭的删除开关 + 官方 `onDeleteSession`，不自己实现删除逻辑；只影响首页会话行，会话页里的归档按钮不动 |
 
 官方 2.0.x 只有「默认展开」和「默认折叠」两种静态行为，没有上面第一套；首页也只有一个「归档」入口，没有删除按钮。
 
@@ -42,7 +46,7 @@
 - Node.js 18+
 - opencode 桌面端（Electron 版，安装目录下有 `resources\app.asar`）
 
-支持版本：**2.0.30**（2.0.29 的思考折叠锚点相同，但 2.0.29 里没有首页删除按钮的那段代码，会报找不到目标）。opencode 升级后 minified 代码会变，锚点失效时脚本会明确报错，需要按下面「升级后锚点找不到」更新。
+支持版本：**2.0.32**（2.0.29 的思考折叠锚点相同，但 2.0.29 里没有首页删除按钮的那段代码，会报找不到目标）。opencode 升级后 minified 代码会变，锚点失效时脚本会明确报错，需要按下面「升级后锚点找不到」更新。
 
 两组补丁是**同一次运行里全部打上**的：任一目标的锚点对不上，脚本会报错并**不写文件**（不会出现只打一半的情况）。
 
@@ -66,6 +70,9 @@ node verify.mjs
 # 3b. 不想开调试口时，可以先做静态校验（直接查 asar 里两组补丁的标记）
 node verify.mjs --static
 
+# 3c. 只查删除/多选补丁有没有注入（要先切到首页；只查存在性，不会真删）
+node verify.mjs --delete
+
 # 4. 想撤销补丁、回到官方原版（自动：关桌面端 → 盖回备份 → 再开回来）
 node apply-patch.mjs --restore
 ```
@@ -88,7 +95,7 @@ node apply-patch.mjs --out patched.asar
 |---|---|
 | `apply-patch.mjs` | 主脚本：找安装目录 → 定位两个 renderer chunk → 打两组补丁 → 重建 asar（含 dry-run / `--out` / `--write`） |
 | `restart.mjs` | 关掉再带 `--remote-debugging-port=9222` 重开桌面端 |
-| `verify.mjs` | 走 CDP 检查折叠行为，PASS 时退出码 0 |
+| `verify.mjs` | 走 CDP 检查折叠行为（`--delete` 查删除/多选补丁，`--static` 只查 asar 标记），PASS 时退出码 0 |
 | `SKILL.md` | 给 opencode agent 当技能用的说明（含补丁细节、坑、锚点定位法） |
 | `使用说明.md` | 面向人的使用说明 |
 
@@ -111,16 +118,18 @@ node apply-patch.mjs --out patched.asar
 
 ### 首页会话删除按钮（目标 chunk：含 `e.onArchiveSession(e.record.session)` 的那个 `main-*.js`）
 
-官方代码里删除按钮其实**已经写好**，只是开关被写死成关闭。脚本做 6 处替换：
+官方代码里删除按钮其实**已经写好**，只是开关被写死成关闭。脚本做 8 处替换：
 
 | 标记 | 改什么 |
 |---|---|
-| **D1** | 把开关 `nie=!1` 改成 `nie=!0`，并在同一 chunk 内定义一个内联的 16×16 垃圾桶图标组件（`ZZ_TRASH_ICON`） |
+| **D1** | 把开关 `,bie=!1,xie=500;` 改成 `,bie=!0,xie=500,` + 内联 16×16 垃圾桶图标组件（`ZZ_TRASH_ICON`）；多选删除 UI 的 IIFE（`D_MULTI_JS`）接在声明**结尾 `;` 之后**当独立语句（不能塞进那个逗号列表，见「已知坑」） |
 | **D2** | 按钮文案 `common.archive` → `common.delete`（"归档"→"删除"） |
 | **D3** | 按钮 `data-action` `home-session-archive` → `home-session-delete` |
-| **D4** | 图标 `archive` → 垃圾桶 |
+| **D4** | 图标 `archive` → 垃圾桶；顺手注册行→会话映射（`__ocRegRow$`）、把官方 `onDeleteSession` 存进 `__ocDeleteApi$` |
 | **D5** | `aria-label` `common.archive` → `common.delete` |
-| **D6** | 点击动作 `e.onArchiveSession(e.record.session)` → `e.onDeleteSession(e.server,e.record.session)`（走官方删除确认框，带 server/session 参数） |
+| **D6** | 点击动作 `e.onArchiveSession(e.record.session)` → 包一层 try/finally 设 `__ocSkipConfirm = !!t.shiftKey` 再调 `e.onDeleteSession(...)`（Shift 免确认） |
+| **D7** | `showDelete` 加旁路 `globalThis.__ocSkipConfirm ? v(e,t) : r.show(确认框)`（`v` 是官方内部删除函数，`onDeleteSession` 就是 `showDelete`） |
+| **D8** | 会话右键菜单「删除」项后追加「多选删除」项，`onSelect` 调 `__ocMultiEnter$` 进多选模式 |
 
 两个目标 chunk 必须**串行**重建：每替换一个文件都会平移它之后所有文件的 offset，第二个要在第一个的结果上继续。
 
@@ -131,6 +140,7 @@ node apply-patch.mjs --out patched.asar
 - **asar header 的 JSON 长度必须和原版一模一样**（不足用空格补齐）。改短会让 `dataStart` 前移 → Electron 启动失败，进程直接退出，连日志目录都不建。
 - **`dataStart` 也必须和原版完全一致**，别按对齐公式重算。2.0.30 原版是 4 字节对齐（`jsonLen` 2172835 → `dataStart` 2172852，尾部 1 个 NUL）；按 8 字节对齐重算会得到 2172856（+4），Electron 报「加载应用程序时发生错误」。
 - 字符串替换**必须自检**：曾因正则分组数对不上，写出 `undefined.open` 让渲染进程崩。
+- **往 minified 的 `var`/`let` 声明列表里插东西，只能插 `name=expr`**：D1 那个锚点 `…,yie=B(…),bie=!1,xie=500;` 就是一条 `var` 声明，直接用逗号接 IIFE（`,(function(){…})()`）会 `SyntaxError: Unexpected token '('`——而且压缩后整个 bundle 就几行，`node --check` 只会把错误扣在整行上，行号完全没用。要么给 IIFE 赋值目标，要么放到声明结尾 `;` 之后当独立语句。
 - 验证产物时注意：asar 里 `node_modules/@lydell/node-pty-win32-x64/*` 这类文件是 `app.asar.unpacked` 的，它们的 `offset` 指向外部文件，用 asar 内的数据去比对 integrity **必然 mismatch**——原版也一样，别误判成补丁打坏了。
 - 启动失败时看 `%APPDATA%\ai.opencode.desktop\logs\<最新时间戳>\renderer.log`，里面 `fatal renderer error` 的堆栈 `行:列` 直接指向出错 chunk 的哪一处替换。
 - 改 asar **必须完全退出桌面端**，热重载（Ctrl+R）会白屏（主进程缓存了旧 asar 头，偏移已变）。
@@ -146,7 +156,7 @@ node apply-patch.mjs --out patched.asar
 opencode 升级后 minified 代码会变，脚本会报「锚点没找到」。此时：
 
 1. 从 asar 抽出所有 `/out/renderer/assets/*.js`，搜 `defaultOpen`、`data-timeline-part-id`、`ui.message.thought` 定位思考组件所在 chunk；搜 `onArchiveSession`、`home-session-archive` 定位首页会话行组件所在 chunk。
-2. 看新版 `i=()=>...`、`get open(){...}`、`onOpenChange:t=>{...}` 以及 6 处删除按钮锚点的实际写法，更新 `apply-patch.mjs` 里的 `P1_FIND / P4_FIND / P8_FIND / P2_FIND` 和 `D_RULES`。
+2. 看新版 `i=()=>...`、`get open(){...}`、`onOpenChange:t=>{...}` 以及 8 处删除按钮锚点的实际写法，更新 `apply-patch.mjs` 里的 `P1_FIND / P4_FIND / P8_FIND / P2_FIND` 和 `D_RULES`。
 3. 重跑 dry-run，确认全部 OK 再 `--write`。
 
 ## 历史版本对照
@@ -155,6 +165,7 @@ opencode 升级后 minified 代码会变，脚本会报「锚点没找到」。�
 |---|---|---|---|
 | 2.0.29 | `/out/renderer/assets/route-4O9GzN5h.js`（350831 B） | 无此代码 | 176333529 → ~176334560 |
 | 2.0.30 | `/out/renderer/assets/route-CPNDqx0F.js`（355075 → 356889 B） | `/out/renderer/assets/main-CfL8Gr4d.js`（1321365 → 1321786 B） | 176341661 → 176343896 |
+| 2.0.32 | `/out/renderer/assets/route-BYzALZ62.js`（357215 → 359029 B） | `/out/renderer/assets/main-CZyBNj5O.js`（官方 1321183 → 1326572 B） | 176346919 → 176353638 |
 
 ---
 

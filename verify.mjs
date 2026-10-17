@@ -108,12 +108,39 @@ if (process.argv.includes('--static')) {
     ['首页删除按钮 · 垃圾桶图标 ZZ_TRASH_ICON', anyChunk('ZZ_TRASH_ICON')],
     ['首页删除按钮 · 归档动作已移除', !anyChunk('e.onArchiveSession(e.record.session)')],
     ['首页删除按钮 · 归档 data-action 已移除', !anyChunk('`home-session-archive`')],
+    ['首页删除按钮 · 多选工具条 data-oc-multi', anyChunk('data-oc-multi')],
+    ['首页删除按钮 · 多选入口 __ocMultiEnter$', anyChunk('__ocMultiEnter$')],
+    ['首页删除按钮 · 会话映射 __ocRegRow$', anyChunk('__ocRegRow$')],
   ];
   console.log('asar:', asarPath, '(' + buf.length + ' 字节)');
   for (const [label, ok] of checks) console.log((ok ? '✅ ' : '❌ ') + label);
   const allOk = checks.every(([, ok]) => ok);
   console.log(allOk ? '✅ 两组补丁标记齐全（结构静态校验通过）' : '❌ 有标记缺失：补丁没打上，或被打回了官方原版');
   process.exit(allOk ? 0 : 3);
+}
+
+// ---- 行为验证（--delete）：连桌面端检查首页删除 + 多选补丁是否注入 ----
+if (process.argv.includes('--delete')) {
+  const p = await page();
+  console.log('调试页:', p.url);
+  const out = await evalIn(p, `(() => {
+    const rows = [...document.querySelectorAll('[data-session-id]')];
+    const bar = document.querySelector('[data-oc-multi]');
+    return {
+      multiEnter: typeof globalThis.__ocMultiEnter$,
+      regRow: typeof globalThis.__ocRegRow$,
+      deleteApi: typeof globalThis.__ocDeleteApi$,
+      bar: !!bar, barText: bar ? bar.textContent.trim() : null, barDisplay: bar ? bar.style.display : null,
+      rows: rows.length,
+      deleteButtons: document.querySelectorAll('[data-action="home-session-delete"]').length,
+      firstRowHasButton: rows.length ? !!rows[0].querySelector('[data-action="home-session-delete"]') : null,
+    };
+  })()`);
+  console.log(JSON.stringify(out, null, 2));
+  const ok = out.multiEnter === 'function' && out.regRow === 'function' && out.deleteApi === 'function'
+    && out.bar && out.rows > 0 && out.firstRowHasButton;
+  console.log(ok ? '✅ 删除/多选补丁已注入（行按钮 + 悬浮工具条 + 全局钩子都在）' : '❌ 删除补丁没生效（见上面字段）');
+  process.exit(ok ? 0 : 3);
 }
 
 const p = await page();

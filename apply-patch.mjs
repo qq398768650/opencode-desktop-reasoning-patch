@@ -159,13 +159,58 @@ const P2_REPL = 'x(()=>U(n,`data-timeline-part-id`,e.id)),(()=>{' +
 const D_ANCHOR = 'e.onArchiveSession(e.record.session)';   // 定位目标 chunk 用（同时也是 D6 的锚点）
 // 官方图标集里没有 trash/delete，内联一个 SVG 垃圾桶
 const D_TRASH_ICON = 'ZZ_TRASH_ICON=()=>{var s=document.createElementNS(`http://www.w3.org/2000/svg`,`svg`);return s.setAttribute(`viewBox`,`0 0 16 16`),s.setAttribute(`width`,`16`),s.setAttribute(`height`,`16`),s.setAttribute(`fill`,`currentColor`),s.innerHTML=`<path d="M6.4 1.8h3.2l.4 1H13v1.3H3V2.8h3l.4-1ZM3.4 5.4h9.2l-.7 8.1a1.4 1.4 0 0 1-1.4 1.3H5.5a1.4 1.4 0 0 1-1.4-1.3l-.7-8.1Zm3 1.4v5.9h1.2V6.8H6.4Zm2.9 0v5.9h1.2V6.8H9.3Z"/>`,s}';
+// 官方的删除强制过一次确认框（showDelete → r.show(确认框)）。为了「一次删很多」方便，加两个口子：
+//   1) 行按钮按住 Shift 点击 → 置 __ocSkipConfirm 后调 showDelete，showDelete 见到标志就直接走内部删除函数 v()
+//   2) 多选模式：注入一个悬浮工具条，选中多行后一次批量删（内部同样借 __ocSkipConfirm 跳过逐个确认）
+// v(server,session) 是官方内部删除函数（showDelete 的闭包里可见），data.session.remove(id) + 失效 home-sessions 查询。
+const D_MULTI_JS = '(function(){try{' +
+  'if(typeof document==="undefined"||globalThis.__ocMultiBoot$)return;' +
+  'globalThis.__ocMultiBoot$=1;' +
+  'var S=globalThis.__ocMultiState$={on:!1,sel:new Map(),armed:!1};' +
+  'var ROW=globalThis.__ocRowMap$=new Map();' +
+  'globalThis.__ocRegRow$=globalThis.__ocRegRow$||function(server,session){try{if(session&&session.id)ROW.set(session.id,{server:server,session:session})}catch(e){}};' +
+  'var rowsNow=function(){return document.querySelectorAll("[data-session-id]")};' +
+  'var paintRows=function(){var a=rowsNow(),i;for(i=0;i<a.length;i++){var id=a[i].getAttribute("data-session-id");if(S.on&&S.sel.has(id))a[i].classList.add("oc-multi-sel");else a[i].classList.remove("oc-multi-sel")}};' +
+  'var paintBar=function(){' +
+    'var n=S.sel.size;' +
+    'bar.style.display=(S.on||rowsNow().length)?"flex":"none";' +
+    'bar.textContent="";' +
+    'if(!S.on){bar.appendChild(mk("多选删除","rgba(255,255,255,.14)",function(){S.on=!0;S.armed=!1;paintBar();paintRows()}));return}' +
+    'var lab=document.createElement("span");lab.textContent="已选 "+n;lab.style.cssText="padding:0 4px;opacity:.85";bar.appendChild(lab);' +
+    'bar.appendChild(mk("全选","rgba(255,255,255,.14)",function(){var a=rowsNow(),i;for(i=0;i<a.length;i++){var id=a[i].getAttribute("data-session-id"),r=ROW.get(id);if(id&&r)S.sel.set(id,r)}S.armed=!1;paintBar();paintRows()}));' +
+    'bar.appendChild(mk(S.armed?("确认删除 "+n):(n?("删除 "+n):"删除"),"#e11d48",function(){if(!S.sel.size)return;if(!S.armed){S.armed=!0;paintBar();return}runDel()}));' +
+    'bar.appendChild(mk("取消","rgba(255,255,255,.14)",function(){S.on=!1;S.sel.clear();S.armed=!1;paintBar();paintRows()}));' +
+  '};' +
+  'var runDel=function(){' +
+    'var api=globalThis.__ocDeleteApi$,items=[];' +
+    'S.sel.forEach(function(v){items.push(v)});' +
+    'S.on=!1;S.sel.clear();S.armed=!1;paintBar();paintRows();' +
+    'if(!api)return;' +
+    'for(var it=0;it<items.length;it++){var _p=globalThis.__ocSkipConfirm;globalThis.__ocSkipConfirm=!0;try{api(items[it].server,items[it].session)}catch(e){}globalThis.__ocSkipConfirm=_p}' +
+  '};' +
+  'globalThis.__ocMultiEnter$=function(server,session){try{S.on=!0;S.armed=!1;if(session&&session.id){ROW.set(session.id,{server:server,session:session});S.sel.set(session.id,{server:server,session:session})}paintBar();paintRows()}catch(e){}};' +
+  'var head=document.head||document.documentElement;' +
+  'var sty=document.createElement("style");' +
+  'sty.textContent="[data-session-id].oc-multi-sel{outline:2px solid #f43f5e;outline-offset:-2px;border-radius:8px}";' +
+  'head&&head.appendChild(sty);' +
+  'var bar=document.createElement("div");' +
+  'bar.setAttribute("data-oc-multi","1");' +
+  'bar.style.cssText="position:fixed;right:14px;bottom:14px;z-index:2147483000;display:none;align-items:center;gap:6px;padding:5px 6px;border-radius:10px;background:rgba(24,24,27,.94);color:#fafafa;box-shadow:0 8px 24px rgba(0,0,0,.4);font:12px/1.2 system-ui,-apple-system,Segoe UI,sans-serif";' +
+  '(document.body||document.documentElement).appendChild(bar);' +
+  'var mk=function(label,bg,fn){var b=document.createElement("button");b.type="button";b.textContent=label;b.style.cssText="cursor:pointer;border:0;border-radius:7px;padding:5px 10px;font:inherit;color:#fafafa;background:"+bg;b.addEventListener("click",function(ev){ev.preventDefault();ev.stopPropagation();fn()},!0);return b};' +
+  'document.addEventListener("click",function(ev){if(!S.on)return;var tn=ev.target;if(tn&&tn.closest&&tn.closest("[data-oc-multi]"))return;var el=tn&&tn.closest&&tn.closest("[data-session-id]");if(!el)return;ev.preventDefault();ev.stopPropagation();var id=el.getAttribute("data-session-id");if(S.sel.has(id))S.sel.delete(id);else{var r=ROW.get(id);if(r)S.sel.set(id,r)}S.armed=!1;paintBar();paintRows()},!0);' +
+  'document.addEventListener("mousedown",function(ev){if(!S.on)return;var tn=ev.target;if(tn&&tn.closest&&tn.closest("[data-oc-multi]"))return;if(tn&&tn.closest&&tn.closest("[data-session-id]")){ev.preventDefault();ev.stopPropagation()}},!0);' +
+  'try{var mo=new MutationObserver(function(){paintRows();var has=rowsNow().length?1:0;if(has!==globalThis.__ocMultiHas$){globalThis.__ocMultiHas$=has;paintBar()}});mo.observe(document.body||document.documentElement,{childList:!0,subtree:!0})}catch(e){}' +
+'}catch(e){}})()';
 const D_RULES = [
-  ['D1 打开官方写死的按钮开关 + 定义垃圾桶图标', ',bie=!1,xie=500;', ',bie=!0,xie=500,' + D_TRASH_ICON + ';'],
+  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI', ',bie=!1,xie=500;', ',bie=!0,xie=500,' + D_TRASH_ICON + ';' + D_MULTI_JS + ';'],
   ['D2 tooltip 文案 归档→删除', 'get value(){return e.language.t(`common.archive`)}', 'get value(){return e.language.t(`common.delete`)}'],
   ['D3 动作标识 home-session-archive→delete', '`home-session-archive`', '`home-session-delete`'],
-  ['D4 图标 归档→垃圾桶', 'get icon(){return F(jP,{name:`archive`})}', 'get icon(){return F(ZZ_TRASH_ICON,{})}'],
+  ['D4 图标 归档→垃圾桶 + 注册行→会话映射', 'get icon(){return F(jP,{name:`archive`})}', 'get icon(){return globalThis.__ocRegRow$&&globalThis.__ocRegRow$(e.server,e.record.session),globalThis.__ocDeleteApi$=e.onDeleteSession,F(ZZ_TRASH_ICON,{})}'],
   ['D5 无障碍标签 归档→删除', 'get"aria-label"(){return e.language.t(`common.archive`)}', 'get"aria-label"(){return e.language.t(`common.delete`)}'],
-  ['D6 点击动作 归档→删除（复用官方确认框）', D_ANCHOR, 'e.onDeleteSession(e.server,e.record.session)'],
+  ['D6 点击动作 归档→删除 + Shift 免确认', D_ANCHOR, '(function(){var _p=globalThis.__ocSkipConfirm;globalThis.__ocSkipConfirm=!!t.shiftKey;try{e.onDeleteSession(e.server,e.record.session)}finally{globalThis.__ocSkipConfirm=_p}})()'],
+  ['D7 showDelete 支持跳过确认框（走内部删除函数 v）', 'showDelete:(e,t)=>r.show(()=>F(y,{server:e,session:t}))', 'showDelete:(e,t)=>globalThis.__ocSkipConfirm?v(e,t):r.show(()=>F(y,{server:e,session:t}))'],
+  ['D8 会话右键菜单加「多选删除」入口', 'F(B3.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[z(()=>e.language.t(`common.delete`)),`…`]}})', 'F(B3.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[z(()=>e.language.t(`common.delete`)),`…`]}}),F(B3.Item,{onSelect:()=>globalThis.__ocMultiEnter$(e.server,e.record.session),get children(){return[z(()=>"多选删除"),`…`]}})'],
 ];
 
 function replaceOnce(content, find, repl, label) {
@@ -313,6 +358,10 @@ for (const [label, find, repl] of D_RULES) del = replaceOnce(del, find, repl, la
   if (!txt.includes('home-session-delete')) throw new Error('补丁自检失败：删除按钮的 data-action 没换掉');
   if (!txt.includes('e.onDeleteSession(e.server,e.record.session)')) throw new Error('补丁自检失败：删除动作没接上');
   if (txt.includes('e.onArchiveSession(') || txt.includes('`home-session-archive`')) throw new Error('补丁自检失败：还残留归档动作');
+  if (!txt.includes('showDelete:(e,t)=>globalThis.__ocSkipConfirm?v(e,t):')) throw new Error('补丁自检失败：showDelete 没有接上跳过确认框的分支');
+  if (!txt.includes('globalThis.__ocMultiEnter$')) throw new Error('补丁自检失败：多选删除入口没注入');
+  if (!txt.includes('__ocRegRow$')) throw new Error('补丁自检失败：会话行→会话映射注册缺失');
+  if (!txt.includes('data-oc-multi')) throw new Error('补丁自检失败：多选工具条没注入');
 }
 jobs.push({ path: delPath, content: del, label: '首页删除按钮' });
 
