@@ -329,14 +329,16 @@ let content = Buffer.from(readEntry(srcParsed, targetPath));
     `_stream$=()=>!!(${pv}.streaming&&${pv}.content?.time?.completed===void 0),` +
     // 「我后面有没有出现下一段思考（带收起按钮的块）或正文块」—— 工具调用行（含 .tool-collapsible）不算，
     // 否则每轮思考完一调工具就立刻收起。定位「我」用 part id 比对，不依赖父节点（每个 part 的父节点都不同）。
-    // 外加一条：**我自己必须已经整块滚出视口上方**（height>0 防未布局），否则不折 —— 这就是「无感折叠」：
-    // 人看不见它的时候才收，看得见的时候一直摊着。
+    // 两种收法：
+    //   ① 后面出现了**正文块**（这轮回复结束了）→ 直接收，不管我在哪；收的时候有 _anchor$ 补偿，下方内容不跳。
+    //   ② 后面只有**下一段思考块**（多轮思考还在继续）→ 只有我自己整块滚出视口上方（height>0 防未布局）才收，
+    //      这就是「无感折叠」：人看不见它的时候才收，看得见的时候一直摊着。
     `_later$=()=>{var _a$=[...document.querySelectorAll(\`[data-timeline-part-id]\`)],_k$=-1,_j$;` +
     `for(_j$=0;_j$<_a$.length;_j$++)if(_a$[_j$].getAttribute(\`data-timeline-part-id\`)===${propsVar}.id)_k$=_j$;` +
-    `if(_k$<0)return!1;var _r$=_a$[_k$].getBoundingClientRect();if(!(_r$.height>0&&_r$.bottom<=0))return!1;` +
+    `if(_k$<0)return!1;var _r$=_a$[_k$].getBoundingClientRect(),_off$=_r$.height>0&&_r$.bottom<=0;` +
     `for(_j$=_k$+1;_j$<_a$.length;_j$++){var _e$=_a$[_j$];` +
     `if(_e$.getAttribute(\`data-timeline-part-id\`)===${propsVar}.id)continue;` +
-    `if(_e$.querySelector(\`[data-reasoning-collapse]\`))return!0;` +
+    `if(_e$.querySelector(\`[data-reasoning-collapse]\`)){if(_off$)return!0;continue}` +
     `if(_e$.querySelector(\`.tool-collapsible\`))continue;` +
     `if((_e$.textContent||\`\`).trim())return!0}return!1},`;
   // 默认值：流式中展开；用户手动开合过就听用户的；否则看「后面有没有下一段思考/正文」——
