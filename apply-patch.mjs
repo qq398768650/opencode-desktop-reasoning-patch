@@ -145,12 +145,19 @@ const P2_REPL = 'x(()=>U(n,`data-timeline-part-id`,e.id)),(()=>{' +
   'var _findScroller$=function(){var p=n.parentElement;while(p){try{var s=getComputedStyle(p);if(/(auto|scroll)/.test(s.overflowY)&&p.scrollHeight>p.clientHeight+1)return p}catch(e){}p=p.parentElement}return document.scrollingElement||document.documentElement};' +
   'var _anchor$=function(fn){var sc=_findScroller$(),r0=n.getBoundingClientRect(),useB=r0.bottom<=0,meas=function(){var r=n.getBoundingClientRect();return useB?r.bottom:r.top},t0=meas();fn();var fix=function(){if(!sc||!n.isConnected)return;var d=meas()-t0;if(Math.abs(d)>1)sc.scrollTop+=d};fix();try{queueMicrotask(fix)}catch(e){}try{requestAnimationFrame(fix)}catch(e){}};' +
   'var _collapse$=()=>{if(_stream$())return;_anchor$(function(){_rx$.set(e.id,!1),r(`open`,!1),e.onOpenChange?.(!1),e.onContentRendered?.()})};' +
-  // 折叠时机：思考结束后不按时间收；等「同一条消息里出现我之后的 part」（= 下一段思考开始，或正文结果出来了）再收一次。
+  // 折叠时机（无感折叠）：不按时间收、也不等下一段出现就收，而是等这个块**完全滚出视口上方**才收。
+  // 收的那一刻人已经看不见它了，再加 _anchor$ 把 scrollTop 补回去，下方内容原地不动，等于什么都没发生。
   // 手动开合过的块（_rx$ 里有记录）不自动收。
+  'var _want$=()=>!_rx$.has(e.id)&&!_stream$()&&_later$();' +
   'var _pending$=!1;' +
-  'var _mo$=new MutationObserver(()=>{if(!n.isConnected){_mo$.disconnect();return}if(_pending$)return;_pending$=!0;setTimeout(()=>{_pending$=!1;if(!n.isConnected){_mo$.disconnect();return}if(!_rx$.has(e.id)&&!_stream$()&&_later$()){_mo$.disconnect(),_collapse$()}},200)});' +
+  'var _mo$=new MutationObserver(()=>{if(!n.isConnected){_mo$.disconnect();return}if(_pending$)return;_pending$=!0;setTimeout(()=>{_pending$=!1;if(!n.isConnected){_mo$.disconnect();return}if(_want$()){_mo$.disconnect(),_collapse$()}},200)});' +
   // 必须在挂载后的 effect 里观察：IIFE 执行时 n 还没进 DOM，parentElement 是空的。
-  'Y(()=>{if(!_rx$.has(e.id)&&!_stream$()&&_later$()){_collapse$();return}_mo$.observe(document.body,{childList:!0,subtree:!0})});' +
+  'Y(()=>{if(_want$()){_collapse$();return}_mo$.observe(document.body,{childList:!0,subtree:!0})});' +
+  // 滚动也要触发：块是被「滚」出视口的，光靠 MutationObserver 等不到。scroll 不冒泡，只能捕获阶段挂一次全局。
+  'var _q$=globalThis.__ocFoldQ$||(globalThis.__ocFoldQ$=[]);' +
+  'for(var _qi$=_q$.length-1;_qi$>=0;_qi$--)if(_q$[_qi$].id===e.id)_q$.splice(_qi$,1);' +
+  '_q$.push({id:e.id,n:n,want:_want$,fold:_collapse$});' +
+  'if(!globalThis.__ocFoldScan$){globalThis.__ocFoldScan$=function(){var _qq$=globalThis.__ocFoldQ$||[];for(var _sk$=_qq$.length-1;_sk$>=0;_sk$--){var _it$=_qq$[_sk$];if(!_it$.n.isConnected){_qq$.splice(_sk$,1);continue}if(_it$.want()){_qq$.splice(_sk$,1);_it$.fold()}}};document.addEventListener(`scroll`,function(){if(globalThis.__ocFoldT$)return;globalThis.__ocFoldT$=setTimeout(function(){globalThis.__ocFoldT$=0;globalThis.__ocFoldScan$()},120)},true)}' +
   '_foot$.addEventListener(`click`,t=>{t.preventDefault(),t.stopPropagation(),_collapse$()});' +
   'n.addEventListener(`dblclick`,t=>{if(t.target&&t.target.closest&&t.target.closest(`a,input,textarea,select,button`))return;_collapse$()});' +
   'x(()=>{_foot$.style.display=i()&&!_stream$()?``:`none`}),n.appendChild(_foot$)' +
@@ -322,8 +329,11 @@ let content = Buffer.from(readEntry(srcParsed, targetPath));
     `_stream$=()=>!!(${pv}.streaming&&${pv}.content?.time?.completed===void 0),` +
     // 「我后面有没有出现下一段思考（带收起按钮的块）或正文块」—— 工具调用行（含 .tool-collapsible）不算，
     // 否则每轮思考完一调工具就立刻收起。定位「我」用 part id 比对，不依赖父节点（每个 part 的父节点都不同）。
+    // 外加一条：**我自己必须已经整块滚出视口上方**（height>0 防未布局），否则不折 —— 这就是「无感折叠」：
+    // 人看不见它的时候才收，看得见的时候一直摊着。
     `_later$=()=>{var _a$=[...document.querySelectorAll(\`[data-timeline-part-id]\`)],_k$=-1,_j$;` +
     `for(_j$=0;_j$<_a$.length;_j$++)if(_a$[_j$].getAttribute(\`data-timeline-part-id\`)===${propsVar}.id)_k$=_j$;` +
+    `if(_k$<0)return!1;var _r$=_a$[_k$].getBoundingClientRect();if(!(_r$.height>0&&_r$.bottom<=0))return!1;` +
     `for(_j$=_k$+1;_j$<_a$.length;_j$++){var _e$=_a$[_j$];` +
     `if(_e$.getAttribute(\`data-timeline-part-id\`)===${propsVar}.id)continue;` +
     `if(_e$.querySelector(\`[data-reasoning-collapse]\`))return!0;` +
@@ -348,6 +358,7 @@ content = replaceOnce(content, P2_FIND, P2_REPL, 'P2+P3 (收起按钮/双击/结
   if (!txt.includes('_later$') || !txt.includes('MutationObserver')) throw new Error('补丁自检失败：折叠时机（下一段 part 出现才收）逻辑缺失');
   if (!txt.includes('!_later$()')) throw new Error('补丁自检失败：i() 缺少「后面没有下一段思考/正文时保持展开」的默认值');
   if (!txt.includes('_anchor$=function')) throw new Error('补丁自检失败：折叠时的滚动位置补偿（_anchor$）缺失');
+  if (!txt.includes('__ocFoldScan$')) throw new Error('补丁自检失败：滚出视口才折叠（__ocFoldScan$）缺失');
   if (txt.includes('_graceTimer$')) throw new Error('补丁自检失败：还残留按时间折叠的 grace 逻辑');
   if (!txt.includes('data-reasoning-collapse')) throw new Error('补丁自检失败：收起按钮没生成');
 }
