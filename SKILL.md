@@ -72,7 +72,7 @@ LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar
 | P1 | `i()`（思考块是否展开）改成：流式中恒 true；否则优先本地 store `n.open`，其次 `globalThis.__ocReasoningOpen` 这张 Map（跨重挂载记忆），都没有时回退到 `!_later$()` —— 后面还没出现下一段思考/正文时**保持展开**（这是「思考结束先别收」的关键：思考结束时组件会卸载重挂载，光靠「不主动收」撑不住）。**同时**把 `_rx$`（全局 Map）、`_stream$`（`!!(e.streaming && e.content?.time?.completed === void 0)`）、`_later$` 声明进同一个 `let` 列表 |
 | P4 | 摘掉 `get open()` 里 `?? (timelineDetail.thinking.details === 'expanded' : void 0)` 这个兜底 —— 就是它让每个思考块默认恒为展开 |
 | P8 | `onOpenChange` 把用户的开合状态记进 `_rx$`（流式期间的 spurious `true` 不记），并把 `open` 写进本地 store 做即时反馈 |
-| P2 | 底部加「收起 ▴」按钮、根节点加双击空白收起；**折叠时机**用 `_later$()`：后面出现「带收起按钮的思考块」（= 下一段思考开始）或「非工具行、有文字的正文块」（= 出结果）时收一次；工具调用行（含 `.tool-collapsible`）不算，否则每轮思考完一调工具就立刻收起。用 `MutationObserver` 盯 `document.body`（200ms 节流、收一次就 disconnect）；手动开合过的块（`_rx$` 里有记录）不自动收 |
+| P2 | 底部加「收起 ▴」按钮、根节点加双击空白收起；**折叠时机**用 `_later$()`：后面出现「带收起按钮的思考块」（= 下一段思考开始）或「非工具行、有文字的正文块」（= 出结果）时收一次；工具调用行（含 `.tool-collapsible`）不算，否则每轮思考完一调工具就立刻收起。用 `MutationObserver` 盯 `document.body`（200ms 节流、收一次就 disconnect）；手动开合过的块（`_rx$` 里有记录）不自动收。**折叠时做滚动锚定**（`_anchor$`）：折叠前记下本块相对视口的位置，折叠后按差值补偿滚动容器的 `scrollTop`（块完全滚到视口上方时用底边做锚点，否则用顶边），否则翻历史时块一收，视口就被带偏；`rAF` 再补一次以兜住异步渲染，且节点已卸载（`!n.isConnected`）时直接跳过 |
 
 ### 二、首页会话删除按钮（目标 chunk：含 `e.onArchiveSession(e.record.session)` 的 `main-*.js`，脚本自动找）
 
