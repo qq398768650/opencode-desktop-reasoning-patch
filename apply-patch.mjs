@@ -143,7 +143,7 @@ const P2_REPL = 'x(()=>U(n,`data-timeline-part-id`,e.id)),(()=>{' +
   // 折叠会让这个块瞬间变矮，上方内容整体位移 —— 用户正在翻历史时视口会被带偏。
   // 所以折叠前记下本块相对视口的位置，折叠后把滚动容器补偿回来（等价于浏览器的 scroll anchoring）。
   'var _findScroller$=function(){var p=n.parentElement;while(p){try{var s=getComputedStyle(p);if(/(auto|scroll)/.test(s.overflowY)&&p.scrollHeight>p.clientHeight+1)return p}catch(e){}p=p.parentElement}return document.scrollingElement||document.documentElement};' +
-  'var _anchor$=function(fn){var sc=_findScroller$(),r0=n.getBoundingClientRect(),useB=r0.bottom<=0,meas=function(){var r=n.getBoundingClientRect();return useB?r.bottom:r.top},t0=meas();fn();var fix=function(){if(!sc||!n.isConnected)return;var d=meas()-t0;if(Math.abs(d)>1)sc.scrollTop+=d};fix();try{requestAnimationFrame(fix)}catch(e){}};' +
+  'var _anchor$=function(fn){var sc=_findScroller$(),r0=n.getBoundingClientRect(),useB=r0.bottom<=0,meas=function(){var r=n.getBoundingClientRect();return useB?r.bottom:r.top},t0=meas();fn();var fix=function(){if(!sc||!n.isConnected)return;var d=meas()-t0;if(Math.abs(d)>1)sc.scrollTop+=d};fix();try{queueMicrotask(fix)}catch(e){}try{requestAnimationFrame(fix)}catch(e){}};' +
   'var _collapse$=()=>{if(_stream$())return;_anchor$(function(){_rx$.set(e.id,!1),r(`open`,!1),e.onOpenChange?.(!1),e.onContentRendered?.()})};' +
   // 折叠时机：思考结束后不按时间收；等「同一条消息里出现我之后的 part」（= 下一段思考开始，或正文结果出来了）再收一次。
   // 手动开合过的块（_rx$ 里有记录）不自动收。
