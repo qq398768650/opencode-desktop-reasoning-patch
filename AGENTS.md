@@ -1,4 +1,4 @@
-# AGENT.md
+# AGENTS.md
 
 给**要改这个仓库的人/agent**看的操作约定。想知道补丁做了什么、踩过哪些坑，看 `SKILL.md`；想给普通用户看，看 `使用说明.md`。
 
@@ -18,7 +18,7 @@
 | `apply-patch.mjs` | 唯一的主脚本：找安装目录 → 定位两个 renderer chunk → 打补丁 → 串行重建 asar。支持 dry-run / `--out` / `--write` / `--restore` |
 | `verify.mjs` | 校验。无参数 = CDP 行为验证（思考折叠）；`--delete` = CDP 查删除/多选补丁注入；`--static` = 只查 asar 内标记 |
 | `restart.mjs` | 单独重启桌面端并开 `--remote-debugging-port=9222` |
-| `SKILL.md` | 补丁细节、P1–P2/D1–D8 每处改什么、坑、升级后怎么重新定位锚点 |
+| `SKILL.md` | 补丁细节、P1/P2/P4/P8 与 D1–D8 每处改什么、坑、升级后怎么重新定位锚点 |
 | `README.md` / `使用说明.md` | 面向人的说明 |
 
 ## 铁律
