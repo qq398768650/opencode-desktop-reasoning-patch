@@ -1,29 +1,37 @@
 // verify.mjs — 通过 CDP 检查思考块补丁是否生效
 //   前提：桌面端已用 restart.mjs 启动（带 --remote-debugging-port）
-// 用法: node verify.mjs [--port 9222]           # CDP 行为验证
+// 用法: node verify.mjs [--port 9333]           # CDP 行为验证（不传就自动扫 9222-9400）
 //       node verify.mjs --static [--asar <p>]   # 只做静态检查：不连桌面端，直接查 asar 里三组补丁的标记
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const PORT = (() => {
+// 不传 --port 时自动扫：9222 常落在 Windows 的 TCP 保留端口区间里（Hyper-V/WSL/Docker），
+// Electron 绑不上会静默失败，写死 9222 就只会报「连不上调试口」。
+const ASKED = (() => {
   const i = process.argv.indexOf('--port');
-  return i >= 0 ? process.argv[i + 1] : '9222';
+  return i >= 0 ? process.argv[i + 1] : null;
 })();
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function page() {
+  const ports = ASKED ? [ASKED] : Array.from({ length: 179 }, (_, i) => String(9222 + i));
   for (let i = 0; i < 40; i++) {
-    try {
-      const list = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
-      // 同一调试口下可能还有别的 Electron 页面（比如本地服务管理器 http://127.0.0.1:7900），必须挑 OpenCode 自己的 oc:// 页面
-      const p = list.find((t) => t.type === 'page' && /^oc:\/\//.test(t.url)) || list.find((t) => t.type === 'page');
-      if (p) return p;
-    } catch { /* 还没起来 */ }
+    for (const port of ports) {
+      try {
+        const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+        // 同一调试口下可能还有别的 Electron 页面（比如本地服务管理器 http://127.0.0.1:7900），必须挑 OpenCode 自己的 oc:// 页面
+        const p = list.find((t) => t.type === 'page' && /^oc:\/\//.test(t.url)) || list.find((t) => t.type === 'page');
+        if (p) {
+          if (!ASKED) console.log('调试口:', port);
+          return p;
+        }
+      } catch { /* 还没起来 */ }
+    }
     await sleep(1000);
   }
-  throw new Error('连不上调试口 127.0.0.1:' + PORT + '，桌面端启动了吗？');
+  throw new Error('连不上调试口 ' + (ASKED || '9222-9400') + '，桌面端启动了吗？');
 }
 
 async function evalIn(page, expr) {

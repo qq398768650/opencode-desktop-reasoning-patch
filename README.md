@@ -110,7 +110,8 @@ node apply-patch.mjs --out patched.asar
 | 文件 | 作用 |
 |---|---|
 | `apply-patch.mjs` | 主脚本：找安装目录 → 定位两个 renderer chunk → 打三组补丁 → 重建 asar（含 dry-run / `--out` / `--write`） |
-| `restart.mjs` | 关掉再带 `--remote-debugging-port=9222` 重开桌面端 |
+| `restart.mjs` | 关掉再带 `--remote-debugging-port=<自动挑的端口>` 重开桌面端 |
+| `debug-port.mjs` | 挑调试口：读 Windows 的 TCP 保留端口区间 + `netstat` 占用，从 9222 往后找第一个可用的（`--port` / `OC_DEBUG_PORT` 可覆盖） |
 | `verify.mjs` | 走 CDP 检查折叠行为（`--delete` 查删除/多选补丁，`--time` 查时间补丁，`--static` 只查 asar 标记），PASS 时退出码 0 |
 | `SKILL.md` | 给 opencode agent 当技能用的说明（含补丁细节、坑、锚点定位法） |
 | `使用说明.md` | 面向人的使用说明 |
@@ -177,6 +178,7 @@ node apply-patch.mjs --out patched.asar
   LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar
   # %LOCALAPPDATA%/Programs/@opencode-aidesktop/{OpenCode.exe, resources/app.asar}
   ```
+- **调试口也不能写死 9222**：Windows 上 Hyper-V / WSL / Docker 会占掉一段 TCP 保留端口（本机实测有 `[1114,1613]`、`[9611,9710]`、`[50000,50059]`），9222 落进去时 Electron 绑不上也不报错，verify 只会说「连不上调试口」。现在由 `debug-port.mjs` 挑端口，verify 反向扫 9222–9400。
 - **后端 API 端口不固定**（每次重启都变，实测 45278），时间补丁从 `performance` 里取 base；`/json/list` 里也不止一个页面（还有「本地服务管理器」），CDP 要挑 `oc://renderer/index.html`。
 - **会话页里查不到 `[data-session-id]`**（那是首页行专用），当前会话 id 只能从 `/api/session/<sid>/message` 的请求记录和 `[data-tab-key]` 反推，不能信「最近一次请求的 sid」。
 - 时间 IIFE **不能塞进 `bie=!0,xie=500,` 那条逗号声明**（同 D1 的坑），只能接在 `;` 后面。

@@ -15,10 +15,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { execSync, spawn } from 'node:child_process';
+import { pickPort } from './debug-port.mjs';
 
 const WRITE = process.argv.includes('--write');
 const OUT = (() => { const i = process.argv.indexOf('--out'); return i >= 0 ? process.argv[i + 1] : null; })();
-const DEBUG_PORT = 9222;
+const DEBUG_PORT = pickPort();
 
 function sleep(ms) { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch { } }
 function appRunning() {

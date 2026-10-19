@@ -1,13 +1,11 @@
 // restart.mjs — 完全退出 opencode 桌面端再重开（带远程调试口，供 verify.mjs 用）
-// 用法: node restart.mjs [--port 9222]
+// 用法: node restart.mjs [--port 9222]（不传就自动挑一个没被系统保留的端口，见 debug-port.mjs）
 import fs from 'node:fs';
 import path from 'node:path';
 import { execSync, spawn } from 'node:child_process';
+import { pickPort } from './debug-port.mjs';
 
-const PORT = (() => {
-  const i = process.argv.indexOf('--port');
-  return i >= 0 ? process.argv[i + 1] : '9222';
-})();
+const PORT = pickPort();
 
 function findInstall() {
   const programs = path.join(process.env.LOCALAPPDATA, 'Programs');

@@ -18,7 +18,8 @@
 |---|---|
 | `apply-patch.mjs` | 唯一的主脚本：找安装目录 → 定位两个 renderer chunk → 打补丁 → 串行重建 asar。支持 dry-run / `--out` / `--write` / `--restore` |
 | `verify.mjs` | 校验。无参数 = CDP 行为验证（思考折叠）；`--delete` = CDP 查删除/多选补丁注入；`--static` = 只查 asar 内标记 |
-| `restart.mjs` | 单独重启桌面端并开 `--remote-debugging-port=9222` |
+| `restart.mjs` | 单独重启桌面端并开 `--remote-debugging-port=<自动挑的端口>` |
+| `debug-port.mjs` | 挑调试口：避开 Windows TCP 保留区间（Hyper-V/WSL/Docker）与已占用端口 |
 | `SKILL.md` | 补丁细节、P1/P2/P4/P8 与 D1–D8 每处改什么、坑、升级后怎么重新定位锚点 |
 | `README.md` / `使用说明.md` | 面向人的说明 |
 
@@ -35,6 +36,7 @@
 5. **两个目标 chunk 串行重建**：每替换一个文件都会平移其后所有 offset，第二个必须基于第一个的结果继续（`for (const j of jobs) out = rebuildAsar(parseAsar(out), …)`）。
 6. **自检不能省。** 每次替换后要断言「新标记存在 + 旧标记消失」，产物里出现 `undefined.<prop>` 直接抛错。
 7. **不做超出补丁范围的重构。** 这个仓库的价值是可重放、可回滚、每条改动都能对着官方 bundle 说清出处。
+8. **调试口不写死。** 一律走 `debug-port.mjs` 的 `pickPort()`；`verify.mjs` 保持「不传 `--port` 就扫 9222–9400」的能力。9222 可能被 Windows 保留端口区间占掉，Electron 绑不上不报错，只会让 verify 假失败。
 
 ## 验证顺序
 
