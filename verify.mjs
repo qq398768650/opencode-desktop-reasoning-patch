@@ -17,7 +17,8 @@ async function page() {
   for (let i = 0; i < 40; i++) {
     try {
       const list = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
-      const p = list.find((t) => t.type === 'page');
+      // 同一调试口下可能还有别的 Electron 页面（比如本地服务管理器 http://127.0.0.1:7900），必须挑 OpenCode 自己的 oc:// 页面
+      const p = list.find((t) => t.type === 'page' && /^oc:\/\//.test(t.url)) || list.find((t) => t.type === 'page');
       if (p) return p;
     } catch { /* 还没起来 */ }
     await sleep(1000);
