@@ -1,4 +1,4 @@
-// apply-patch.mjs — 给 opencode 桌面端 app.asar 打两组补丁
+// apply-patch.mjs — 给 opencode 桌面端 app.asar 打三组补丁
 //   [1] 思考折叠（route-*.js 里的思考组件）
 //       目标行为：流式中展开 → 思考一结束不立刻折 → 下一段思考开始或正文结果出来时折成一行 →
 //                 点标题/底部「收起 ▴」/双击空白都能收；手动开合状态跨重挂载保留。
@@ -213,8 +213,82 @@ const D_MULTI_JS = '(function(){try{' +
   'document.addEventListener("mousedown",function(ev){if(!S.on)return;var tn=ev.target;if(tn&&tn.closest&&tn.closest("[data-oc-multi]"))return;if(tn&&tn.closest&&tn.closest("[data-session-id]")){ev.preventDefault();ev.stopPropagation()}},!0);' +
   'try{var mo=new MutationObserver(function(){paintRows();var has=rowsNow().length?1:0;if(has!==globalThis.__ocMultiHas$){globalThis.__ocMultiHas$=has;paintBar()}});mo.observe(document.body||document.documentElement,{childList:!0,subtree:!0})}catch(e){}' +
 '}catch(e){}})()';
+// ---------- 3c) 时间显示 ----------
+// ① 每条助手回复末尾（官方 meta 行「Build · model · 耗时」）追加完成时间，如「· 14:32」。
+// ② 首页会话行追加最后活跃时间（今天 HH:MM，跨天 MM/DD，跨年 YYYY/MM/DD）。
+// 数据来源：
+//   - 回复完成时间：后端 `GET /api/session/<sid>/message` 里每条消息的 time.completed。
+//     DOM 上 meta 行属于 [data-component=text-part][data-timeline-part-id="msg_xxx:text:0"]，
+//     消息 id 取 part id 前缀；也兼容祖先 [data-message-id]。
+//     sid 不直接暴露在 DOM 上：先试「最近一次 /api/session/<sid>/message 请求」的 sid，
+//     再用 tab 的 data-tab-key 和 performance 里出现过的 sid 兜底，命中即缓存。
+//   - 首页活跃时间：__ocRowMap$ 里的 session.time.updated（毫秒）。
+const T_TIME_JS = '(function(){try{' +
+  'if(typeof document==="undefined"||globalThis.__ocTimeBoot$)return;' +
+  'globalThis.__ocTimeBoot$=1;' +
+  'var p2=function(n){return n<10?"0"+n:""+n};' +
+  'var hm=function(ts){var d=new Date(ts);return p2(d.getHours())+":"+p2(d.getMinutes())};' +
+  'var fmt=function(ts){if(!ts)return "";var d=new Date(ts),n=new Date();if(d.toDateString()===n.toDateString())return hm(ts);var s=p2(d.getMonth()+1)+"/"+p2(d.getDate());if(d.getFullYear()!==n.getFullYear())s=d.getFullYear()+"/"+s;return s};' +
+  'var M=globalThis.__ocMsgTime$||(globalThis.__ocMsgTime$=new Map());' +
+  'var SID=globalThis.__ocMsgSid$||(globalThis.__ocMsgSid$={lastTry:0});' +
+  'var BUSY={};' +
+  'var apiBase=function(){var es=performance.getEntriesByType("resource");for(var i=es.length-1;i>=0;i--){var u=es[i].name,k=u.indexOf("/api/");if(k>0&&/^https?:/.test(u))return u.slice(0,k)}return ""};' +
+  'var cands=function(){var out=[],seen={},i;' +
+    'var es=performance.getEntriesByType("resource");' +
+    'for(i=es.length-1;i>=0;i--){var u=es[i].name,k=u.indexOf("/api/session/");if(k<0)continue;var rest=u.slice(k+13),j=rest.indexOf("/"),id=j<0?rest:rest.slice(0,j);if(id.indexOf("ses_")===0&&!seen[id]){seen[id]=1;out.push(id)}}' +
+    'var ts=document.querySelectorAll("[data-tab-key]");' +
+    'for(i=0;i<ts.length;i++){var key=ts[i].getAttribute("data-tab-key")||"",k2=key.indexOf("/session/ses_");if(k2<0)continue;var id2=key.slice(k2+9).split("/")[0];if(id2.indexOf("ses_")===0&&!seen[id2]){seen[id2]=1;out.push(id2)}}' +
+    'return out;' +
+  '};' +
+  'var loadSid=function(sid,then){' +
+    'if(!sid||BUSY[sid])return;var b=apiBase();if(!b)return;BUSY[sid]=1;' +
+    'fetch(b+"/api/session/"+sid+"/message").then(function(r){return r.json()}).then(function(j){' +
+      'var a=Array.isArray(j)?j:((j&&(j.data||j.messages))||[]);' +
+      'for(var i=0;i<a.length;i++){var m=a[i];if(m&&m.id&&m.time)M.set(m.id,m.time)}' +
+      'then&&then();' +
+    '}).catch(function(){}).then(function(){BUSY[sid]=0});' +
+  '};' +
+  'var want=function(mid){' +
+    'if(!mid||M.has(mid))return;var now=Date.now();' +
+    'if(now-(SID.lastTry||0)<2500)return;SID.lastTry=now;' +
+    'var list=cands(),i;' +
+    'for(i=0;i<list.length&&i<6;i++){(function(s){loadSid(s,function(){paintAll()})})(list[i])}' +
+  '};' +
+  'var paintMsg=function(){' +
+    'var metas=document.querySelectorAll("[data-slot=text-part-meta]");' +
+    'for(var i=0;i<metas.length;i++){' +
+      'var sp=metas[i],part=sp.closest("[data-timeline-part-id]"),row=sp.closest("[data-message-id]");' +
+      'var pid=part?(part.getAttribute("data-timeline-part-id")||"").split(":")[0]:"";' +
+      'var rid=row?row.getAttribute("data-message-id"):"";' +
+      'var t=M.get(pid)||M.get(rid);' +
+      'var host=sp.parentElement;if(!host)continue;' +
+      'var el=host.querySelector("[data-oc-done-time]");' +
+      'if(!t||!t.completed){if(el)el.remove();if(!t)want(pid||rid);continue}' +
+      'if(!el){el=document.createElement("span");el.setAttribute("data-oc-done-time","1");el.style.cssText="margin-left:6px;opacity:.7";host.appendChild(el)}' +
+      'var txt="· "+hm(t.completed);if(el.textContent!==txt)el.textContent=txt;' +
+    '}' +
+  '};' +
+  'var paintHome=function(){' +
+    'var rows=document.querySelectorAll("[data-session-id]"),i;' +
+    'for(i=0;i<rows.length;i++){' +
+      'var el=rows[i],id=el.getAttribute("data-session-id"),rec=globalThis.__ocRowMap$&&globalThis.__ocRowMap$.get(id);' +
+      'var ts=rec&&rec.session&&rec.session.time&&rec.session.time.updated;' +
+      'var host=el.querySelector("[data-slot=home-session-labels]");if(!host)continue;' +
+      'var sp=host.querySelector("[data-oc-home-time]");' +
+      'if(!ts){if(sp)sp.remove();continue}' +
+      'if(!sp){sp=document.createElement("span");sp.setAttribute("data-oc-home-time","1");sp.style.cssText="flex:0 0 auto;font-size:11px;line-height:1;opacity:.55;padding-left:6px;font-variant-numeric:tabular-nums";host.appendChild(sp)}' +
+      'var txt=fmt(ts);if(sp.textContent!==txt)sp.textContent=txt;' +
+    '}' +
+  '};' +
+  'var paintAll=function(){paintMsg();paintHome()};' +
+  'var tick=function(){if(globalThis.__ocTimeT$)return;globalThis.__ocTimeT$=setTimeout(function(){globalThis.__ocTimeT$=0;paintAll()},120)};' +
+  'try{var mo=new MutationObserver(tick);mo.observe(document.body||document.documentElement,{childList:!0,subtree:!0})}catch(e){}' +
+  'setInterval(paintHome,15000);' +
+  'paintAll();' +
+'}catch(e){}})()';
+
 const D_RULES = [
-  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI', ',bie=!1,xie=500;', ',bie=!0,xie=500,' + D_TRASH_ICON + ';' + D_MULTI_JS + ';'],
+  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 消息/会话时间', ',bie=!1,xie=500;', ',bie=!0,xie=500,' + D_TRASH_ICON + ';' + D_MULTI_JS + ';' + T_TIME_JS + ';'],
   ['D2 tooltip 文案 归档→删除', 'get value(){return e.language.t(`common.archive`)}', 'get value(){return e.language.t(`common.delete`)}'],
   ['D3 动作标识 home-session-archive→delete', '`home-session-archive`', '`home-session-delete`'],
   ['D4 图标 归档→垃圾桶 + 注册行→会话映射', 'get icon(){return F(jP,{name:`archive`})}', 'get icon(){return globalThis.__ocRegRow$&&globalThis.__ocRegRow$(e.server,e.record.session),globalThis.__ocDeleteApi$=e.onDeleteSession,F(ZZ_TRASH_ICON,{})}'],

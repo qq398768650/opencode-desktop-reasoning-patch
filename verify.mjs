@@ -1,7 +1,7 @@
 // verify.mjs — 通过 CDP 检查思考块补丁是否生效
 //   前提：桌面端已用 restart.mjs 启动（带 --remote-debugging-port）
 // 用法: node verify.mjs [--port 9222]           # CDP 行为验证
-//       node verify.mjs --static [--asar <p>]   # 只做静态检查：不连桌面端，直接查 asar 里两组补丁的标记
+//       node verify.mjs --static [--asar <p>]   # 只做静态检查：不连桌面端，直接查 asar 里三组补丁的标记
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -71,7 +71,7 @@ const PROBE = `(() => {
   }, 600));
 })()`;
 
-// ---- 静态校验（--static）：不连桌面端，直接查安装目录 asar 里两组补丁的标记 ----
+// ---- 静态校验（--static）：不连桌面端，直接查安装目录 asar 里三组补丁的标记 ----
 if (process.argv.includes('--static')) {
   const argAsar = (() => { const i = process.argv.indexOf('--asar'); return i >= 0 ? process.argv[i + 1] : null; })();
   const findInstallAsar = () => {
@@ -112,11 +112,14 @@ if (process.argv.includes('--static')) {
     ['首页删除按钮 · 多选工具条 data-oc-multi', anyChunk('data-oc-multi')],
     ['首页删除按钮 · 多选入口 __ocMultiEnter$', anyChunk('__ocMultiEnter$')],
     ['首页删除按钮 · 会话映射 __ocRegRow$', anyChunk('__ocRegRow$')],
+    ['时间显示 · 启动标记 __ocTimeBoot$', anyChunk('__ocTimeBoot$')],
+    ['时间显示 · 回复完成时间 data-oc-done-time', anyChunk('data-oc-done-time')],
+    ['时间显示 · 首页活跃时间 data-oc-home-time', anyChunk('data-oc-home-time')],
   ];
   console.log('asar:', asarPath, '(' + buf.length + ' 字节)');
   for (const [label, ok] of checks) console.log((ok ? '✅ ' : '❌ ') + label);
   const allOk = checks.every(([, ok]) => ok);
-  console.log(allOk ? '✅ 两组补丁标记齐全（结构静态校验通过）' : '❌ 有标记缺失：补丁没打上，或被打回了官方原版');
+  console.log(allOk ? '✅ 三组补丁标记齐全（结构静态校验通过）' : '❌ 有标记缺失：补丁没打上，或被打回了官方原版');
   process.exit(allOk ? 0 : 3);
 }
 
@@ -141,6 +144,29 @@ if (process.argv.includes('--delete')) {
   const ok = out.multiEnter === 'function' && out.regRow === 'function' && out.deleteApi === 'function'
     && out.bar && out.rows > 0 && out.firstRowHasButton;
   console.log(ok ? '✅ 删除/多选补丁已注入（行按钮 + 悬浮工具条 + 全局钩子都在）' : '❌ 删除补丁没生效（见上面字段）');
+  process.exit(ok ? 0 : 3);
+}
+
+// ---- 行为验证（--time）：连桌面端检查时间补丁（首页活跃时间 + 回复完成时间）----
+if (process.argv.includes('--time')) {
+  const p = await page();
+  console.log('调试页:', p.url);
+  const out = await evalIn(p, `(async () => {
+    await new Promise(r => setTimeout(r, 2500));
+    return {
+      boot: !!globalThis.__ocTimeBoot$,
+      cache: globalThis.__ocMsgTime$ ? globalThis.__ocMsgTime$.size : -1,
+      rows: document.querySelectorAll('[data-session-id]').length,
+      homeTimes: [...document.querySelectorAll('[data-oc-home-time]')].map(e => e.textContent).slice(0, 6),
+      metas: document.querySelectorAll('[data-slot="text-part-meta"]').length,
+      doneTimes: [...document.querySelectorAll('[data-oc-done-time]')].map(e => e.textContent).slice(-6),
+    };
+  })()`);
+  console.log(JSON.stringify(out, null, 2));
+  const okHome = out.rows > 0 ? out.homeTimes.length > 0 : true;
+  const okMsg = out.metas > 0 ? out.doneTimes.length > 0 : true;
+  const ok = out.boot && okHome && okMsg;
+  console.log(ok ? '✅ 时间补丁已生效（首页活跃时间 / 回复完成时间）' : '❌ 时间补丁没生效（见上面字段）');
   process.exit(ok ? 0 : 3);
 }
 
