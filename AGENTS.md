@@ -23,6 +23,7 @@
 
 ## 铁律
 
+0. **动手前先同步远端。** 本目录就是仓库 clone，执行任何补丁命令前先 `git pull --ff-only`（`Already up to date.` 就继续）。拉失败说明有本地未提交改动：先 `git stash -u` 备份再拉，别强拉、别 `reset --hard` 掉老板的东西。
 1. **改脚本先用 dry-run 或 `--out`，别直接 `--write`。** `--write` 会 `taskkill` 真实桌面端、覆盖安装目录。离线验证用假安装目录：
    ```bash
    LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar

@@ -24,6 +24,18 @@ opencode 桌面端的界面打包在 `<安装目录>\resources\app.asar` 里，�
 
 ## 怎么做
 
+**第 0 步：每次执行前先拉取最新补丁（必做）**
+
+本目录就是仓库 clone（`C:\Users\JS\.config\opencode\skills\desktop-reasoning-patch`），动手前先同步远端，避免拿旧锚点/旧逻辑去打新版本：
+
+```bash
+cd "C:/Users/JS/.config/opencode/skills/desktop-reasoning-patch" && git pull --ff-only
+```
+
+- 输出 `Already up to date.` 就直接往下走。
+- 拉失败（有本地未提交改动）**不要强拉**：先 `git stash -u` 备份，再 `git pull --ff-only`，完事用 `git stash list` 确认备份还在，并告诉老板有本地改动被 stash 了。
+- 拉完顺手看一眼 `git log --oneline -1`，确认拿到的是最新提交。
+
 脚本都在本目录下（仓库 clone、或 `~/.config/opencode/skills/<name>/`）：
 
 ```bash
