@@ -4,10 +4,11 @@
 
 ## 这是什么
 
-一个零依赖的 Node 脚本集合：直接改写 opencode 桌面端（Electron）的 `resources/app.asar`，给界面加两组官方没有的交互。
+一个零依赖的 Node 脚本集合：直接改写 opencode 桌面端（Electron）的 `resources/app.asar`，给界面加三组官方没有的交互。
 
 - 思考折叠：流式展开 → 思考结束先摊着 → 整轮结束（最后一块是正文）才直接折，还在调工具/还有下一段思考就等整块滚出视口上方（折叠时补偿滚动，下方内容不动）
 - 首页会话删除：会话行悬停出垃圾桶，点击走官方确认框；Shift 点击免确认；另有「多选删除」模式批量删
+- 时间显示：助手回复末尾补完成时间（`· 14:32`），首页会话行右侧补最后活跃时间（今天 `HH:MM`、跨天 `MM/DD`）
 
 **目标文件是打包产物，不是源码。** 所有改动都是对 minified chunk 做字符串替换，opencode 一升级锚点就会失效。
 
@@ -40,8 +41,9 @@
 ```bash
 node apply-patch.mjs            # dry-run：全部锚点 OK 才继续
 node apply-patch.mjs --write    # 装（自动关→备份 app.asar.bak-<版本号>→写→开回来）
-node verify.mjs --static        # 9 个标记全绿
+node verify.mjs --static        # 12 个标记全绿
 node verify.mjs --delete        # 先切到首页；只查注入，不真删
+node verify.mjs --time          # 时间补丁：首页行时间 + 会话页回复完成时间
 node verify.mjs                 # 思考折叠行为（需要会话里有已完成的思考块）
 ```
 

@@ -1,6 +1,6 @@
-# opencode 桌面端补丁（思考折叠 + 首页会话删除按钮）
+# opencode 桌面端补丁（思考折叠 + 首页会话删除按钮 + 时间显示）
 
-给 [opencode](https://opencode.ai) 桌面端（Electron）加两组官方没有的交互，脚本一次全部打上。
+给 [opencode](https://opencode.ai) 桌面端（Electron）加三组官方没有的交互，脚本一次全部打上。
 
 ## 一、思考折叠
 
@@ -11,6 +11,10 @@
 **首页每个会话行悬停时显示垃圾桶按钮 → 点击弹官方删除确认框 → 确认后删掉该会话**
 
 **一次删很多**：按住 **Shift** 点垃圾桶 = 跳过确认框直接删；或进**多选删除**模式（右下角悬浮条点「多选删除」，或会话右键菜单选「多选删除」），点行勾选（可「全选」），按「删除 N」→「确认删除 N」一次删完。
+
+## 三、时间显示
+
+**每条助手回复末尾补上完成时间（`· 14:32`）→ 首页每个会话行右侧显示最后活跃时间（今天 `14:32`，跨天 `10/16`）**
 
 ---
 
@@ -36,7 +40,16 @@
 | 4 | 右下角悬浮条「多选删除」（或会话右键菜单「多选删除」）进多选模式：点行勾选、可「全选」，「删除 N」按一次变「确认删除 N」，再按就批量删完 |
 | 5 | 复用官方写死关闭的删除开关 + 官方 `onDeleteSession`，不自己实现删除逻辑；只影响首页会话行，会话页里的归档按钮不动 |
 
-官方 2.0.x 只有「默认展开」和「默认折叠」两种静态行为，没有上面第一套；首页也只有一个「归档」入口，没有删除按钮。
+### 时间显示
+
+| # | 行为 |
+|---|---|
+| 1 | 每条助手回复末尾（官方「Build · 模型 · 耗时」那行）追加 **`· 14:32`** 完成时间 |
+| 2 | 消息还在流式输出时**不显示**，回复完成才出现 |
+| 3 | 首页每个会话行右侧显示**最后活跃时间**：今天 `HH:MM`、跨天 `MM/DD`、跨年 `YYYY/MM/DD`；悬停时排在项目名和垃圾桶之间，不重叠 |
+| 4 | 时间全部从后端 `/api/session/<sid>/message` 的 `time.completed` 和 `session.time.updated` 取，不改数据结构、不额外存盘 |
+
+官方 2.0.x 只有「默认展开」和「默认折叠」两种静态行为，没有上面第一套；首页也只有一个「归档」入口，没有删除按钮；消息末尾只有「模型 · 耗时」，没有绝对时间。
 
 ---
 
@@ -48,7 +61,7 @@
 
 支持版本：**2.0.32**（2.0.29 的思考折叠锚点相同，但 2.0.29 里没有首页删除按钮的那段代码，会报找不到目标）。opencode 升级后 minified 代码会变，锚点失效时脚本会明确报错，需要按下面「升级后锚点找不到」更新。
 
-两组补丁是**同一次运行里全部打上**的：任一目标的锚点对不上，脚本会报错并**不写文件**（不会出现只打一半的情况）。
+三组补丁是**同一次运行里全部打上**的：任一目标的锚点对不上，脚本会报错并**不写文件**（不会出现只打一半的情况）。
 
 ---
 
@@ -67,11 +80,14 @@ node apply-patch.mjs --write
 # 3. 验证：历史思考块默认折叠，点一下能开、再点能收
 node verify.mjs
 
-# 3b. 不想开调试口时，可以先做静态校验（直接查 asar 里两组补丁的标记）
+# 3b. 不想开调试口时，可以先做静态校验（直接查 asar 里三组补丁的 12 个标记）
 node verify.mjs --static
 
 # 3c. 只查删除/多选补丁有没有注入（要先切到首页；只查存在性，不会真删）
 node verify.mjs --delete
+
+# 3d. 只查时间补丁（首页看行时间、会话页看回复完成时间）
+node verify.mjs --time
 
 # 4. 想撤销补丁、回到官方原版（自动：关桌面端 → 盖回备份 → 再开回来）
 node apply-patch.mjs --restore
@@ -93,9 +109,9 @@ node apply-patch.mjs --out patched.asar
 
 | 文件 | 作用 |
 |---|---|
-| `apply-patch.mjs` | 主脚本：找安装目录 → 定位两个 renderer chunk → 打两组补丁 → 重建 asar（含 dry-run / `--out` / `--write`） |
+| `apply-patch.mjs` | 主脚本：找安装目录 → 定位两个 renderer chunk → 打三组补丁 → 重建 asar（含 dry-run / `--out` / `--write`） |
 | `restart.mjs` | 关掉再带 `--remote-debugging-port=9222` 重开桌面端 |
-| `verify.mjs` | 走 CDP 检查折叠行为（`--delete` 查删除/多选补丁，`--static` 只查 asar 标记），PASS 时退出码 0 |
+| `verify.mjs` | 走 CDP 检查折叠行为（`--delete` 查删除/多选补丁，`--time` 查时间补丁，`--static` 只查 asar 标记），PASS 时退出码 0 |
 | `SKILL.md` | 给 opencode agent 当技能用的说明（含补丁细节、坑、锚点定位法） |
 | `使用说明.md` | 面向人的使用说明 |
 
@@ -122,7 +138,7 @@ node apply-patch.mjs --out patched.asar
 
 | 标记 | 改什么 |
 |---|---|
-| **D1** | 把开关 `,bie=!1,xie=500;` 改成 `,bie=!0,xie=500,` + 内联 16×16 垃圾桶图标组件（`ZZ_TRASH_ICON`）；多选删除 UI 的 IIFE（`D_MULTI_JS`）接在声明**结尾 `;` 之后**当独立语句（不能塞进那个逗号列表，见「已知坑」） |
+| **D1** | 把开关 `,bie=!1,xie=500;` 改成 `,bie=!0,xie=500,` + 内联 16×16 垃圾桶图标组件（`ZZ_TRASH_ICON`）；多选删除 UI 的 IIFE（`D_MULTI_JS`）和时间显示的 IIFE（`T_TIME_JS`）接在声明**结尾 `;` 之后**当独立语句（不能塞进那个逗号列表，见「已知坑」） |
 | **D2** | 按钮文案 `common.archive` → `common.delete`（"归档"→"删除"） |
 | **D3** | 按钮 `data-action` `home-session-archive` → `home-session-delete` |
 | **D4** | 图标 `archive` → 垃圾桶；顺手注册行→会话映射（`__ocRegRow$`）、把官方 `onDeleteSession` 存进 `__ocDeleteApi$` |
@@ -130,6 +146,17 @@ node apply-patch.mjs --out patched.asar
 | **D6** | 点击动作 `e.onArchiveSession(e.record.session)` → 包一层 try/finally 设 `__ocSkipConfirm = !!t.shiftKey` 再调 `e.onDeleteSession(...)`（Shift 免确认） |
 | **D7** | `showDelete` 加旁路 `globalThis.__ocSkipConfirm ? v(e,t) : r.show(确认框)`（`v` 是官方内部删除函数，`onDeleteSession` 就是 `showDelete`） |
 | **D8** | 会话右键菜单「删除」项后追加「多选删除」项，`onSelect` 调 `__ocMultiEnter$` 进多选模式 |
+
+### 时间显示（不新增锚点，IIFE 跟着 D1 注入）
+
+纯 DOM 注入，不改官方组件逻辑：
+
+| 标记 | 做什么 |
+|---|---|
+| **T1 回复完成时间** | 扫 `[data-slot="text-part-meta"]`（官方「Build · 模型 · 耗时」行），从最近的 `[data-timeline-part-id="msg_xxx:text:0"]` 取消息 id，在 `time.completed` 存在时往同级追加 `<span data-oc-done-time>· HH:MM</span>` |
+| **T2 首页活跃时间** | 扫首页 `[data-session-id]` 行，从 `__ocRowMap$` 取 `session.time.updated`，在 `[data-slot="home-session-labels"]` 末尾追加 `<span data-oc-home-time>`（`flex:0 0 auto`，右对齐） |
+| **T3 数据来源** | 后端 API base 从 `performance.getEntriesByType('resource')` 里最近的 `http://127.0.0.1:<port>/api/` 取（端口每次重启都变，不能写死）；会话 id 从 URL 和 `[data-tab-key]` 里收集，`GET /api/session/<sid>/message` 命中消息 id 后缓存进 `__ocMsgTime$` |
+| **T4 重绘** | `MutationObserver` 盯 `document.body`（120ms 节流）+ 首页 15s 定时兜底（`time.updated` 变化不必然触发 DOM 变更） |
 
 两个目标 chunk 必须**串行**重建：每替换一个文件都会平移它之后所有文件的 offset，第二个要在第一个的结果上继续。
 
@@ -150,6 +177,10 @@ node apply-patch.mjs --out patched.asar
   LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar
   # %LOCALAPPDATA%/Programs/@opencode-aidesktop/{OpenCode.exe, resources/app.asar}
   ```
+- **后端 API 端口不固定**（每次重启都变，实测 45278），时间补丁从 `performance` 里取 base；`/json/list` 里也不止一个页面（还有「本地服务管理器」），CDP 要挑 `oc://renderer/index.html`。
+- **会话页里查不到 `[data-session-id]`**（那是首页行专用），当前会话 id 只能从 `/api/session/<sid>/message` 的请求记录和 `[data-tab-key]` 反推，不能信「最近一次请求的 sid」。
+- 时间 IIFE **不能塞进 `bie=!0,xie=500,` 那条逗号声明**（同 D1 的坑），只能接在 `;` 后面。
+- 回复时间的 meta 行**只在消息完成后才渲染**，「流式中不显示」是天然行为；`verify.mjs --time` 因此要等 2.5s 让 `/message` 回来，否则误报。
 
 ## 升级后锚点找不到
 
@@ -165,7 +196,7 @@ opencode 升级后 minified 代码会变，脚本会报「锚点没找到」。�
 |---|---|---|---|
 | 2.0.29 | `/out/renderer/assets/route-4O9GzN5h.js`（350831 B） | 无此代码 | 176333529 → ~176334560 |
 | 2.0.30 | `/out/renderer/assets/route-CPNDqx0F.js`（355075 → 356889 B） | `/out/renderer/assets/main-CfL8Gr4d.js`（1321365 → 1321786 B） | 176341661 → 176343896 |
-| 2.0.32 | `/out/renderer/assets/route-BYzALZ62.js`（357215 → 359029 B） | `/out/renderer/assets/main-CZyBNj5O.js`（官方 1321183 → 1326572 B） | 176346919 → 176353638 |
+| 2.0.32 | `/out/renderer/assets/route-BYzALZ62.js`（357215 → 360467 B） | `/out/renderer/assets/main-CZyBNj5O.js`（官方 1321667 → 1330501 B，含多选删除 + 时间） | 176346919 → 176359005 |
 
 ---
 
