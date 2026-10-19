@@ -33,6 +33,11 @@ cd "C:/Users/JS/.config/opencode/skills/desktop-reasoning-patch" && git pull --f
 ```
 
 - 输出 `Already up to date.` 就直接往下走。
+- **本机直连 GitHub 经常超时**（报 `Failed to connect to github.com port 443`）。这时走本机代理重试，别反复干等：
+  ```bash
+  git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897 pull --ff-only
+  ```
+  7897 是 Clash 默认混合端口；换了代理软件就先探一下哪个端口通（`curl -x http://127.0.0.1:<port> -sS -o /dev/null -w "%{http_code}" https://github.com`）。
 - 拉失败（有本地未提交改动）**不要强拉**：先 `git stash -u` 备份，再 `git pull --ff-only`，完事用 `git stash list` 确认备份还在，并告诉老板有本地改动被 stash 了。
 - 拉完顺手看一眼 `git log --oneline -1`，确认拿到的是最新提交。
 
