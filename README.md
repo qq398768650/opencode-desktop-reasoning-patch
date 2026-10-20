@@ -59,7 +59,7 @@
 - Node.js 18+
 - opencode 桌面端（Electron 版，安装目录下有 `resources\app.asar`）
 
-支持版本：**2.0.32**（2.0.29 的思考折叠锚点相同，但 2.0.29 里没有首页删除按钮的那段代码，会报找不到目标）。opencode 升级后 minified 代码会变，锚点失效时脚本会明确报错，需要按下面「升级后锚点找不到」更新。
+支持版本：**2.1.1**（2.0.32 / 2.0.29 的锚点写法不同，见文末版本对照表）。opencode 升级后 minified 代码会变，锚点失效时脚本会明确报错，需要按下面「升级后锚点找不到」更新。
 
 三组补丁是**同一次运行里全部打上**的：任一目标的锚点对不上，脚本会报错并**不写文件**（不会出现只打一半的情况）。
 
@@ -139,7 +139,7 @@ node apply-patch.mjs --out patched.asar
 
 | 标记 | 改什么 |
 |---|---|
-| **D1** | 把开关 `,bie=!1,xie=500;` 改成 `,bie=!0,xie=500,` + 内联 16×16 垃圾桶图标组件（`ZZ_TRASH_ICON`）；多选删除 UI 的 IIFE（`D_MULTI_JS`）和时间显示的 IIFE（`T_TIME_JS`）接在声明**结尾 `;` 之后**当独立语句（不能塞进那个逗号列表，见「已知坑」） |
+| **D1** | 把开关 `,p8=!1,m8=500;` 改成 `,p8=!0,m8=500,` + 内联 16×16 垃圾桶图标组件（`ZZ_TRASH_ICON`）；多选删除 UI 的 IIFE（`D_MULTI_JS`）和时间显示的 IIFE（`T_TIME_JS`）接在声明**结尾 `;` 之后**当独立语句（不能塞进那个逗号列表，见「已知坑」） |
 | **D2** | 按钮文案 `common.archive` → `common.delete`（"归档"→"删除"） |
 | **D3** | 按钮 `data-action` `home-session-archive` → `home-session-delete` |
 | **D4** | 图标 `archive` → 垃圾桶；顺手注册行→会话映射（`__ocRegRow$`）、把官方 `onDeleteSession` 存进 `__ocDeleteApi$` |
@@ -168,7 +168,7 @@ node apply-patch.mjs --out patched.asar
 - **asar header 的 JSON 长度必须和原版一模一样**（不足用空格补齐）。改短会让 `dataStart` 前移 → Electron 启动失败，进程直接退出，连日志目录都不建。
 - **`dataStart` 也必须和原版完全一致**，别按对齐公式重算。2.0.30 原版是 4 字节对齐（`jsonLen` 2172835 → `dataStart` 2172852，尾部 1 个 NUL）；按 8 字节对齐重算会得到 2172856（+4），Electron 报「加载应用程序时发生错误」。
 - 字符串替换**必须自检**：曾因正则分组数对不上，写出 `undefined.open` 让渲染进程崩。
-- **往 minified 的 `var`/`let` 声明列表里插东西，只能插 `name=expr`**：D1 那个锚点 `…,yie=B(…),bie=!1,xie=500;` 就是一条 `var` 声明，直接用逗号接 IIFE（`,(function(){…})()`）会 `SyntaxError: Unexpected token '('`——而且压缩后整个 bundle 就几行，`node --check` 只会把错误扣在整行上，行号完全没用。要么给 IIFE 赋值目标，要么放到声明结尾 `;` 之后当独立语句。
+- **往 minified 的 `var`/`let` 声明列表里插东西，只能插 `name=expr`**：D1 那个锚点 `…,f8=B(…),p8=!1,m8=500;` 就是一条 `var` 声明，直接用逗号接 IIFE（`,(function(){…})()`）会 `SyntaxError: Unexpected token '('`——而且压缩后整个 bundle 就几行，`node --check` 只会把错误扣在整行上，行号完全没用。要么给 IIFE 赋值目标，要么放到声明结尾 `;` 之后当独立语句。
 - 验证产物时注意：asar 里 `node_modules/@lydell/node-pty-win32-x64/*` 这类文件是 `app.asar.unpacked` 的，它们的 `offset` 指向外部文件，用 asar 内的数据去比对 integrity **必然 mismatch**——原版也一样，别误判成补丁打坏了。
 - 启动失败时看 `%APPDATA%\ai.opencode.desktop\logs\<最新时间戳>\renderer.log`，里面 `fatal renderer error` 的堆栈 `行:列` 直接指向出错 chunk 的哪一处替换。
 - 改 asar **必须完全退出桌面端**，热重载（Ctrl+R）会白屏（主进程缓存了旧 asar 头，偏移已变）。
@@ -181,7 +181,7 @@ node apply-patch.mjs --out patched.asar
 - **调试口也不能写死 9222**：Windows 上 Hyper-V / WSL / Docker 会占掉一段 TCP 保留端口（本机实测有 `[1114,1613]`、`[9611,9710]`、`[50000,50059]`），9222 落进去时 Electron 绑不上也不报错，verify 只会说「连不上调试口」。现在由 `debug-port.mjs` 挑端口，verify 反向扫 9222–9400。
 - **后端 API 端口不固定**（每次重启都变，实测 45278），时间补丁从 `performance` 里取 base；`/json/list` 里也不止一个页面（还有「本地服务管理器」），CDP 要挑 `oc://renderer/index.html`。
 - **会话页里查不到 `[data-session-id]`**（那是首页行专用），当前会话 id 只能从 `/api/session/<sid>/message` 的请求记录和 `[data-tab-key]` 反推，不能信「最近一次请求的 sid」。
-- 时间 IIFE **不能塞进 `bie=!0,xie=500,` 那条逗号声明**（同 D1 的坑），只能接在 `;` 后面。
+- 时间 IIFE **不能塞进 `p8=!0,m8=500,` 那条逗号声明**（同 D1 的坑），只能接在 `;` 后面。
 - 回复时间的 meta 行**只在消息完成后才渲染**，「流式中不显示」是天然行为；`verify.mjs --time` 因此要等 2.5s 让 `/message` 回来，否则误报。
 
 ## 升级后锚点找不到
@@ -199,6 +199,7 @@ opencode 升级后 minified 代码会变，脚本会报「锚点没找到」。�
 | 2.0.29 | `/out/renderer/assets/route-4O9GzN5h.js`（350831 B） | 无此代码 | 176333529 → ~176334560 |
 | 2.0.30 | `/out/renderer/assets/route-CPNDqx0F.js`（355075 → 356889 B） | `/out/renderer/assets/main-CfL8Gr4d.js`（1321365 → 1321786 B） | 176341661 → 176343896 |
 | 2.0.32 | `/out/renderer/assets/route-BYzALZ62.js`（357215 → 360467 B） | `/out/renderer/assets/main-CZyBNj5O.js`（官方 1321667 → 1330501 B，含多选删除 + 时间） | 176346919 → 176359005 |
+| 2.1.1 | `/out/renderer/assets/route-B8ouoQvI.js`（357032 → 360284 B） | `/out/renderer/assets/main-ptWBkiKT.js`（官方 1311929 → 1320763 B） | 176355995 → 176368081 |
 
 ---
 
