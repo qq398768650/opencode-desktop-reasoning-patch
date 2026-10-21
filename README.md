@@ -59,7 +59,7 @@
 - Node.js 18+
 - opencode 桌面端（Electron 版，安装目录下有 `resources\app.asar`）
 
-支持版本：**2.1.1**（2.0.32 / 2.0.29 的锚点写法不同，见文末版本对照表）。opencode 升级后 minified 代码会变，锚点失效时脚本会明确报错，需要按下面「升级后锚点找不到」更新。
+支持版本：**2.1.2**（2.1.1 / 2.0.32 / 2.0.29 的锚点写法不同，见文末版本对照表）。opencode 升级后 minified 代码会变，锚点失效时脚本会明确报错，需要按下面「升级后锚点找不到」更新。
 
 三组补丁是**同一次运行里全部打上**的：任一目标的锚点对不上，脚本会报错并**不写文件**（不会出现只打一半的情况）。
 
@@ -200,6 +200,7 @@ opencode 升级后 minified 代码会变，脚本会报「锚点没找到」。�
 | 2.0.30 | `/out/renderer/assets/route-CPNDqx0F.js`（355075 → 356889 B） | `/out/renderer/assets/main-CfL8Gr4d.js`（1321365 → 1321786 B） | 176341661 → 176343896 |
 | 2.0.32 | `/out/renderer/assets/route-BYzALZ62.js`（357215 → 360467 B） | `/out/renderer/assets/main-CZyBNj5O.js`（官方 1321667 → 1330501 B，含多选删除 + 时间） | 176346919 → 176359005 |
 | 2.1.1 | `/out/renderer/assets/route-B8ouoQvI.js`（357032 → 360284 B） | `/out/renderer/assets/main-ptWBkiKT.js`（官方 1311929 → 1320763 B） | 176355995 → 176368081 |
+| 2.1.2 | `/out/renderer/assets/route-BKcp3psp.js`（359447 → 362699 B） | `/out/renderer/assets/main-CRF7GP33.js`（官方 1312199 → 1321033 B） | 176359724 → 176371810 |
 
 ---
 
