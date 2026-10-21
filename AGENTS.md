@@ -17,6 +17,7 @@
 | 文件 | 职责 |
 |---|---|
 | `apply-patch.mjs` | 唯一的主脚本：找安装目录 → 定位两个 renderer chunk → 打补丁 → 串行重建 asar。支持 dry-run / `--out` / `--write` / `--restore` |
+| `commands/reasoning-patch.md` | `/reasoning-patch` 斜杠命令源文件；`--write` 会自动装到 `~/.config/opencode/commands/` |
 | `verify.mjs` | 校验。无参数 = CDP 行为验证（思考折叠）；`--delete` = CDP 查删除/多选补丁注入；`--static` = 只查 asar 内标记 |
 | `restart.mjs` | 单独重启桌面端并开 `--remote-debugging-port=<自动挑的端口>` |
 | `debug-port.mjs` | 挑调试口：避开 Windows TCP 保留区间（Hyper-V/WSL/Docker）与已占用端口 |

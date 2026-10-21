@@ -67,13 +67,13 @@ node apply-patch.mjs --restore
 node apply-patch.mjs --out patched.asar
 ```
 
-一条 `--write` 就够（关/开桌面端都自动做了，不会断会话：agent 跑在后端 `opencode-cli.exe serve --service` 里）。`restart.mjs` 只在想单独重启时用。
+一条 `--write` 就够（关/开桌面端都自动做了，不会断会话：agent 跑在后端 `opencode-cli.exe serve --service` 里）。它还会顺手把 `commands/reasoning-patch.md` 装到 `~/.config/opencode/commands/`，让 `/reasoning-patch` 可用（内容没变时只打印「已是最新」）。`restart.mjs` 只在想单独重启时用。
 
 调试口不用管：`apply-patch.mjs` / `restart.mjs` 会调 `debug-port.mjs` 自动挑一个没被 Windows 保留、也没被占用的端口（`--port` 或环境变量 `OC_DEBUG_PORT` 可指定）；`verify.mjs` 不传 `--port` 时自己扫 9222–9400，连上后会打印 `调试口: <port>`。
 
 `verify.mjs` 需要页面上有一个会话、且会话里有已完成的思考块。如果它报「没找到思考块」，让老板打开一个聊天再跑一次。
 
-不想开调试口时用静态校验：`node verify.mjs --static`（自动找安装目录，也可 `--asar <path>` 指定某个 asar）——直接检查 asar 里三组补丁的 13 个标记，全在才退出码 0。
+不想开调试口时用静态校验：`node verify.mjs --static`（自动找安装目录，也可 `--asar <path>` 指定某个 asar）——直接检查 asar 里三组补丁的 14 个标记，全在才退出码 0。
 
 删除/多选补丁的行为验证：`node verify.mjs --delete`（同样要桌面端带调试口）——检查首页行上有垃圾桶按钮、右下角悬浮条在、`__ocMultiEnter$`/`__ocRegRow$`/`__ocDeleteApi$` 三个全局钩子已注入。**需要先切到首页**（在会话视图里 `[data-session-id]` 为 0，会报失败）。它只做存在性检查，不会真删东西。
 

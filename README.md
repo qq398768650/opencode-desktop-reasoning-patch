@@ -65,18 +65,13 @@
 
 三组补丁是**同一次运行里全部打上**的：任一目标的锚点对不上，脚本会报错并**不写文件**（不会出现只打一半的情况）。
 
-### 可选：装成斜杠命令
+### 斜杠命令 `/reasoning-patch`（`--write` 时自动安装）
 
 仓库里的 `commands/reasoning-patch.md` 是一条 OpenCode 斜杠命令，装上以后在输入框敲 `/reasoning-patch` 就能让 agent 按流程重打补丁（拉最新 → dry-run → `--write` → 验证）。
 
-**它和补丁是两回事**：补丁改的是桌面端 `app.asar`，斜杠命令只是 OpenCode 读的 markdown 文件，跑 `apply-patch.mjs` 不会自动装它。想用就手动复制一份：
+`node apply-patch.mjs --write` 会顺手把它复制到 `~/.config/opencode/commands/reasoning-patch.md`，内容有变化才覆盖，输出里会打印「已安装斜杠命令」或「斜杠命令已是最新」。命令文件是热加载的，不用重启 OpenCode。
 
-```bash
-mkdir -p ~/.config/opencode/commands
-cp commands/reasoning-patch.md ~/.config/opencode/commands/
-```
-
-命令文件是热加载的，不用重启，复制完直接敲 `/reasoning-patch`。
+> 补丁本身（asar 里的 chunk）和斜杠命令是两套机制：前者改桌面端，后者只是 OpenCode 读的 markdown。脚本已经帮你把两者串起来，不需要手动复制。
 
 ---
 

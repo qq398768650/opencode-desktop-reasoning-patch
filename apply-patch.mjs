@@ -12,10 +12,14 @@
 //   node apply-patch.mjs --restore  # 用官方备份 app.asar.bak-<版本> 还原 app.asar（撤销补丁）
 // 备份约定：<install>/resources/app.asar.bak-<官方版本号> 保存官方原版（本脚本会按需自动创建）
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 import { execSync, spawn } from 'node:child_process';
 import { pickPort } from './debug-port.mjs';
+
+const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 const WRITE = process.argv.includes('--write');
 const OUT = (() => { const i = process.argv.indexOf('--out'); return i >= 0 ? process.argv[i + 1] : null; })();
@@ -539,11 +543,26 @@ for (const j of jobs) {
 }
 console.log('新 app.asar 大小:', out.length, '(原', source.length, ')');
 
+// 把仓库里的斜杠命令装到 OpenCode 的 commands 目录（补丁本身不会带命令，这里顺手装好）
+function installCommand() {
+  const src = path.join(HERE, 'commands', 'reasoning-patch.md');
+  if (!fs.existsSync(src)) return;
+  const dstDir = path.join(os.homedir(), '.config', 'opencode', 'commands');
+  const dst = path.join(dstDir, 'reasoning-patch.md');
+  const next = fs.readFileSync(src);
+  const same = fs.existsSync(dst) && fs.readFileSync(dst).equals(next);
+  if (same) { console.log('斜杠命令已是最新:', dst); return; }
+  fs.mkdirSync(dstDir, { recursive: true });
+  fs.writeFileSync(dst, next);
+  console.log('已安装斜杠命令:', dst);
+}
+
 if (WRITE) {
   const wasRunning = stopApp();          // 必须先关：运行中覆盖 asar 会把当前实例搞崩
   if (!fs.existsSync(BAK)) { fs.copyFileSync(ASAR, BAK); console.log('已保存官方备份:', BAK); }
   fs.writeFileSync(ASAR, out);
   console.log('已写入:', ASAR);
+  installCommand();
   if (wasRunning) startApp(dir);         // 关过就自动开回来（带调试口，供 verify.mjs 用）
 } else if (OUT) {
   // --out <file>：只把打好的 asar 写到指定位置，不碰安装目录、不关进程（便于先离线检查产物）
