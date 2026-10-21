@@ -295,7 +295,7 @@ const T_SPEED_JS = '(function(){try{' +
   'if(typeof document==="undefined"||globalThis.__ocSpeedBoot$)return;' +
   'globalThis.__ocSpeedBoot$=1;' +
   'var K=0.6,WIN=2500,IDLE=2000;' +
-  'var D=[],SHOWN=0;' +
+  'var D=[];' +
   'var kAdj=function(){' +
     'var M=globalThis.__ocMsgTime$;if(!M||!M.size)return K;' +
     'var tk=0,ch=0,it=M.values(),x;' +
@@ -316,12 +316,11 @@ const T_SPEED_JS = '(function(){try{' +
     'var now=performance.now(),cut=now-WIN,i,sum=0,oldest=now,last=0;' +
     'for(i=D.length-1;i>=0;i--){var r=D[i];if(r.t<cut)break;sum+=r.n;if(r.t<oldest)oldest=r.t;if(r.t>last)last=r.t}' +
     'while(D.length&&D[0].t<now-8000)D.shift();' +
-    'if(!sum||now-last>IDLE){if(s.textContent)s.textContent="";s.style.display="none";SHOWN=0;return}' +
+    'if(!sum||now-last>IDLE){if(s.textContent)s.textContent="";s.style.display="none";return}' +
     'var span=Math.min(WIN,now-oldest);if(span<1000)span=1000;' +
     'var raw=sum/span*1000*kAdj();' +
-    'SHOWN=SHOWN?SHOWN*0.65+raw*0.35:raw;' +
     's.style.display="";' +
-    'var txt=Math.round(SHOWN)+" tok/s";' +
+    'var txt=Math.round(raw)+" tok/s";' +
     'if(s.textContent!==txt)s.textContent=txt;' +
   '};' +
   'var connect=function(){' +

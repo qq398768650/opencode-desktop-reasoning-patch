@@ -46,7 +46,7 @@
 |---|---|
 | 1 | 每条助手回复末尾（官方「Build · 模型 · 耗时」那行）追加 **`· 14:32`** 完成时间 |
 | 2 | 消息还在流式输出时**不显示**，回复完成才出现 |
-| 3 | 输入框**发送按钮左侧实时显示输出速度** `142 tok/s`：订阅页面内 SSE 的 `session.text.delta` / `session.reasoning.delta`，按 2.5 秒滑动窗口统计字符增量，再乘 token/字符 比换算成 tok/s；数字带指数平滑，不会乱跳 |
+| 3 | 输入框**发送按钮左侧实时显示输出速度** `142 tok/s`：订阅页面内 SSE 的 `session.text.delta` / `session.reasoning.delta`，按 2.5 秒滑动窗口统计字符增量，再乘 token/字符 比换算成 tok/s；窗口本身是移动平均，不再叠指数平滑，数字反映当下瞬时速度 |
 | 4 | 流式时出现，最后一个 delta 后约 **2 秒**淡出；空闲时不占位 |
 | 5 | 首页每个会话行右侧显示**最后活跃时间**：今天 `HH:MM`、跨天 `MM/DD`、跨年 `YYYY/MM/DD`；悬停时排在项目名和垃圾桶之间，不重叠 |
 | 6 | 时间数据从后端 `/api/session/<sid>/message` 的 `time.completed` 和 `session.time.updated` 取；速度走页面内 SSE，不轮询接口、不改数据结构、不额外存盘 |
@@ -174,7 +174,7 @@ node apply-patch.mjs --out patched.asar
 |---|---|
 | **T1 回复完成时间** | 扫 `[data-slot="text-part-meta"]`（官方「Build · 模型 · 耗时」行），从最近的 `[data-timeline-part-id="msg_xxx:text:0"]` 取消息 id，在 `time.completed` 存在时往同级追加 `<span data-oc-done-time>· HH:MM</span>` |
 | **T2 实时速度** | 在 `[data-slot="composer-actions"]` 里发送按钮左侧插 `<span data-oc-live-tps>`。`fetch(apiBase()+"/api/event")` 读 SSE 流（`getReader()` + `TextDecoder`，按 `\n\n` 分帧），`session.text.delta` / `session.reasoning.delta` 的 `delta` 是增量文本，把长度记进数组 `D` |
-| **T3 速度算法** | `WIN=2500` 滑动窗口，`span=max(1000, min(WIN, now-最老样本))`，`raw=sum(n)/span*1000*k`，`SHOWN=SHOWN*0.65+raw*0.35` 平滑，400ms 重绘；最后一个 delta 超过 `IDLE=2000` 清空并隐藏 |
+| **T3 速度算法** | `WIN=2500` 滑动窗口，`span=max(1000, min(WIN, now-最老样本))`，`raw=sum(n)/span*1000*k`，400ms 重绘；最后一个 delta 超过 `IDLE=2000` 清空并隐藏（窗口滑出时数字自然衰减，不需要额外平滑） |
 | **T4 比例 `k`** | 从 `__ocMsgTime$` 反推：只收 `c>=200` 且 `0.25<n/c<1.2` 的消息（过滤纯工具调用和 reasoning 被摘要的异常样本），取聚合比 `sum(n)/sum(c)`；样本不足 2000 字符时用常量 `0.6` |
 | **T5 首页活跃时间** | 扫首页 `[data-session-id]` 行，从 `__ocRowMap$` 取 `session.time.updated`，在 `[data-slot="home-session-labels"]` 末尾追加 `<span data-oc-home-time>`（`flex:0 0 auto`，右对齐） |
 | **T6 数据来源** | 后端 API base 从 `performance.getEntriesByType('resource')` 里最近的 `http://127.0.0.1:<port>/api/` 取（端口每次重启都变，不能写死）；会话 id 从 URL 和 `[data-tab-key]` 里收集（2.1.2 的桌面端不再用 HTTP 拉消息，`performance` 里没有 `/api/session/.../message`，`[data-tab-key]` 才是主力），`GET /api/session/<sid>/message` 命中消息 id 后缓存 `{time, tokens, chars}` 进 `__ocMsgTime$` |
@@ -226,7 +226,7 @@ opencode 升级后 minified 代码会变，脚本会报「锚点没找到」。�
 | 2.0.30 | `/out/renderer/assets/route-CPNDqx0F.js`（355075 → 356889 B） | `/out/renderer/assets/main-CfL8Gr4d.js`（1321365 → 1321786 B） | 176341661 → 176343896 |
 | 2.0.32 | `/out/renderer/assets/route-BYzALZ62.js`（357215 → 360467 B） | `/out/renderer/assets/main-CZyBNj5O.js`（官方 1321667 → 1330501 B，含多选删除 + 时间） | 176346919 → 176359005 |
 | 2.1.1 | `/out/renderer/assets/route-B8ouoQvI.js`（357032 → 360284 B） | `/out/renderer/assets/main-ptWBkiKT.js`（官方 1311929 → 1320763 B） | 176355995 → 176368081 |
-| 2.1.2 | `/out/renderer/assets/route-BKcp3psp.js`（359447 → 362699 B） | `/out/renderer/assets/main-CRF7GP33.js`（官方 1312199 → 1324054 B，含时间 + 实时速度） | 176359724 → 176374831 |
+| 2.1.2 | `/out/renderer/assets/route-BKcp3psp.js`（359447 → 362699 B） | `/out/renderer/assets/main-CRF7GP33.js`（官方 1312199 → 1324000 B，含时间 + 实时速度） | 176359724 → 176374777 |
 
 ---
 
