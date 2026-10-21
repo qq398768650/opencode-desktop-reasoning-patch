@@ -122,6 +122,7 @@ if (process.argv.includes('--static')) {
     ['首页删除按钮 · 会话映射 __ocRegRow$', anyChunk('__ocRegRow$')],
     ['时间显示 · 启动标记 __ocTimeBoot$', anyChunk('__ocTimeBoot$')],
     ['时间显示 · 回复完成时间 data-oc-done-time', anyChunk('data-oc-done-time')],
+    ['时间显示 · 输出吞吐量 data-oc-tps', anyChunk('data-oc-tps')],
     ['时间显示 · 首页活跃时间 data-oc-home-time', anyChunk('data-oc-home-time')],
   ];
   console.log('asar:', asarPath, '(' + buf.length + ' 字节)');
@@ -168,13 +169,15 @@ if (process.argv.includes('--time')) {
       homeTimes: [...document.querySelectorAll('[data-oc-home-time]')].map(e => e.textContent).slice(0, 6),
       metas: document.querySelectorAll('[data-slot="text-part-meta"]').length,
       doneTimes: [...document.querySelectorAll('[data-oc-done-time]')].map(e => e.textContent).slice(-6),
+      tps: [...document.querySelectorAll('[data-oc-tps]')].map(e => e.textContent).slice(-6),
     };
   })()`);
   console.log(JSON.stringify(out, null, 2));
   const okHome = out.rows > 0 ? out.homeTimes.length > 0 : true;
   const okMsg = out.metas > 0 ? out.doneTimes.length > 0 : true;
-  const ok = out.boot && okHome && okMsg;
-  console.log(ok ? '✅ 时间补丁已生效（首页活跃时间 / 回复完成时间）' : '❌ 时间补丁没生效（见上面字段）');
+  const okTps = out.metas > 0 ? out.tps.length > 0 : true;
+  const ok = out.boot && okHome && okMsg && okTps;
+  console.log(ok ? '✅ 时间补丁已生效（首页活跃时间 / 回复完成时间 / 吞吐量）' : '❌ 时间补丁没生效（见上面字段）');
   process.exit(ok ? 0 : 3);
 }
 

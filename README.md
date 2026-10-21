@@ -1,4 +1,4 @@
-# opencode 桌面端补丁（思考折叠 + 首页会话删除按钮 + 时间显示）
+# opencode 桌面端补丁（思考折叠 + 首页会话删除按钮 + 时间/速度显示）
 
 给 [opencode](https://opencode.ai) 桌面端（Electron）加三组官方没有的交互，脚本一次全部打上。
 
@@ -12,9 +12,9 @@
 
 **一次删很多**：按住 **Shift** 点垃圾桶 = 跳过确认框直接删；或进**多选删除**模式（右下角悬浮条点「多选删除」，或会话右键菜单选「多选删除」），点行勾选（可「全选」），按「删除 N」→「确认删除 N」一次删完。
 
-## 三、时间显示
+## 三、时间与速度显示
 
-**每条助手回复末尾补上完成时间（`· 14:32`）→ 首页每个会话行右侧显示最后活跃时间（今天 `14:32`，跨天 `10/16`）**
+**每条助手回复末尾补上完成时间（`· 14:32`）和输出吞吐量（`· 65 tok/s`）→ 首页每个会话行右侧显示最后活跃时间（今天 `14:32`，跨天 `10/16`）**
 
 ---
 
@@ -40,16 +40,17 @@
 | 4 | 右下角悬浮条「多选删除」（或会话右键菜单「多选删除」）进多选模式：点行勾选、可「全选」，「删除 N」按一次变「确认删除 N」，再按就批量删完 |
 | 5 | 复用官方写死关闭的删除开关 + 官方 `onDeleteSession`，不自己实现删除逻辑；只影响首页会话行，会话页里的归档按钮不动 |
 
-### 时间显示
+### 时间与速度显示
 
 | # | 行为 |
 |---|---|
 | 1 | 每条助手回复末尾（官方「Build · 模型 · 耗时」那行）追加 **`· 14:32`** 完成时间 |
 | 2 | 消息还在流式输出时**不显示**，回复完成才出现 |
-| 3 | 首页每个会话行右侧显示**最后活跃时间**：今天 `HH:MM`、跨天 `MM/DD`、跨年 `YYYY/MM/DD`；悬停时排在项目名和垃圾桶之间，不重叠 |
-| 4 | 时间全部从后端 `/api/session/<sid>/message` 的 `time.completed` 和 `session.time.updated` 取，不改数据结构、不额外存盘 |
+| 3 | 完成时间后面再追加**输出吞吐量** `· 65 tok/s`，按 `(tokens.output + tokens.reasoning) / (time.streamed - time.created)` 算；耗时不到 800ms 或没有 token 数据就不显示 |
+| 4 | 首页每个会话行右侧显示**最后活跃时间**：今天 `HH:MM`、跨天 `MM/DD`、跨年 `YYYY/MM/DD`；悬停时排在项目名和垃圾桶之间，不重叠 |
+| 5 | 数据全部从后端 `/api/session/<sid>/message` 的 `time.completed` / `tokens` 和 `session.time.updated` 取，不改数据结构、不额外存盘 |
 
-官方 2.0.x 只有「默认展开」和「默认折叠」两种静态行为，没有上面第一套；首页也只有一个「归档」入口，没有删除按钮；消息末尾只有「模型 · 耗时」，没有绝对时间。
+官方 2.0.x 只有「默认展开」和「默认折叠」两种静态行为，没有上面第一套；首页也只有一个「归档」入口，没有删除按钮；消息末尾只有「模型 · 耗时」，没有绝对时间，也没有 tok/s。
 
 ---
 
@@ -80,13 +81,13 @@ node apply-patch.mjs --write
 # 3. 验证：历史思考块默认折叠，点一下能开、再点能收
 node verify.mjs
 
-# 3b. 不想开调试口时，可以先做静态校验（直接查 asar 里三组补丁的 12 个标记）
+# 3b. 不想开调试口时，可以先做静态校验（直接查 asar 里三组补丁的 13 个标记）
 node verify.mjs --static
 
 # 3c. 只查删除/多选补丁有没有注入（要先切到首页；只查存在性，不会真删）
 node verify.mjs --delete
 
-# 3d. 只查时间补丁（首页看行时间、会话页看回复完成时间）
+# 3d. 只查时间/速度补丁（首页看行时间、会话页看回复完成时间和 tok/s；要在有已完成回复的历史会话里跑）
 node verify.mjs --time
 
 # 4. 想撤销补丁、回到官方原版（自动：关桌面端 → 盖回备份 → 再开回来）
@@ -139,7 +140,7 @@ node apply-patch.mjs --out patched.asar
 
 | 标记 | 改什么 |
 |---|---|
-| **D1** | 把开关 `,p8=!1,m8=500;` 改成 `,p8=!0,m8=500,` + 内联 16×16 垃圾桶图标组件（`ZZ_TRASH_ICON`）；多选删除 UI 的 IIFE（`D_MULTI_JS`）和时间显示的 IIFE（`T_TIME_JS`）接在声明**结尾 `;` 之后**当独立语句（不能塞进那个逗号列表，见「已知坑」） |
+| **D1** | 把开关 `,p8=!1,m8=500;` 改成 `,p8=!0,m8=500,` + 内联 16×16 垃圾桶图标组件（`ZZ_TRASH_ICON`）；多选删除 UI 的 IIFE（`D_MULTI_JS`）和时间/吞吐量的 IIFE（`T_TIME_JS`）接在声明**结尾 `;` 之后**当独立语句（不能塞进那个逗号列表，见「已知坑」） |
 | **D2** | 按钮文案 `common.archive` → `common.delete`（"归档"→"删除"） |
 | **D3** | 按钮 `data-action` `home-session-archive` → `home-session-delete` |
 | **D4** | 图标 `archive` → 垃圾桶；顺手注册行→会话映射（`__ocRegRow$`）、把官方 `onDeleteSession` 存进 `__ocDeleteApi$` |
@@ -148,16 +149,17 @@ node apply-patch.mjs --out patched.asar
 | **D7** | `showDelete` 加旁路 `globalThis.__ocSkipConfirm ? v(e,t) : r.show(确认框)`（`v` 是官方内部删除函数，`onDeleteSession` 就是 `showDelete`） |
 | **D8** | 会话右键菜单「删除」项后追加「多选删除」项，`onSelect` 调 `__ocMultiEnter$` 进多选模式 |
 
-### 时间显示（不新增锚点，IIFE 跟着 D1 注入）
+### 时间与速度显示（不新增锚点，IIFE 跟着 D1 注入）
 
 纯 DOM 注入，不改官方组件逻辑：
 
 | 标记 | 做什么 |
 |---|---|
 | **T1 回复完成时间** | 扫 `[data-slot="text-part-meta"]`（官方「Build · 模型 · 耗时」行），从最近的 `[data-timeline-part-id="msg_xxx:text:0"]` 取消息 id，在 `time.completed` 存在时往同级追加 `<span data-oc-done-time>· HH:MM</span>` |
-| **T2 首页活跃时间** | 扫首页 `[data-session-id]` 行，从 `__ocRowMap$` 取 `session.time.updated`，在 `[data-slot="home-session-labels"]` 末尾追加 `<span data-oc-home-time>`（`flex:0 0 auto`，右对齐） |
-| **T3 数据来源** | 后端 API base 从 `performance.getEntriesByType('resource')` 里最近的 `http://127.0.0.1:<port>/api/` 取（端口每次重启都变，不能写死）；会话 id 从 URL 和 `[data-tab-key]` 里收集，`GET /api/session/<sid>/message` 命中消息 id 后缓存进 `__ocMsgTime$` |
-| **T4 重绘** | `MutationObserver` 盯 `document.body`（120ms 节流）+ 首页 15s 定时兜底（`time.updated` 变化不必然触发 DOM 变更） |
+| **T2 输出吞吐量** | 同一条 meta 行、完成时间之后追加 `<span data-oc-tps>· 65 tok/s</span>`：`n = tokens.output + tokens.reasoning`，`ms = time.streamed - time.created`（无 `streamed` 用 `completed`），`rate = n > 0 && ms > 800 ? round(n*1000/ms) : 0`，为 0 就不显示 |
+| **T3 首页活跃时间** | 扫首页 `[data-session-id]` 行，从 `__ocRowMap$` 取 `session.time.updated`，在 `[data-slot="home-session-labels"]` 末尾追加 `<span data-oc-home-time>`（`flex:0 0 auto`，右对齐） |
+| **T4 数据来源** | 后端 API base 从 `performance.getEntriesByType('resource')` 里最近的 `http://127.0.0.1:<port>/api/` 取（端口每次重启都变，不能写死）；会话 id 从 URL 和 `[data-tab-key]` 里收集（2.1.2 的桌面端不再用 HTTP 拉消息，`performance` 里没有 `/api/session/.../message`，`[data-tab-key]` 才是主力），`GET /api/session/<sid>/message` 命中消息 id 后缓存 `{time, tokens}` 进 `__ocMsgTime$` |
+| **T5 重绘** | `MutationObserver` 盯 `document.body`（120ms 节流）+ 首页 15s 定时兜底（`time.updated` 变化不必然触发 DOM 变更） |
 
 两个目标 chunk 必须**串行**重建：每替换一个文件都会平移它之后所有文件的 offset，第二个要在第一个的结果上继续。
 
@@ -200,7 +202,7 @@ opencode 升级后 minified 代码会变，脚本会报「锚点没找到」。�
 | 2.0.30 | `/out/renderer/assets/route-CPNDqx0F.js`（355075 → 356889 B） | `/out/renderer/assets/main-CfL8Gr4d.js`（1321365 → 1321786 B） | 176341661 → 176343896 |
 | 2.0.32 | `/out/renderer/assets/route-BYzALZ62.js`（357215 → 360467 B） | `/out/renderer/assets/main-CZyBNj5O.js`（官方 1321667 → 1330501 B，含多选删除 + 时间） | 176346919 → 176359005 |
 | 2.1.1 | `/out/renderer/assets/route-B8ouoQvI.js`（357032 → 360284 B） | `/out/renderer/assets/main-ptWBkiKT.js`（官方 1311929 → 1320763 B） | 176355995 → 176368081 |
-| 2.1.2 | `/out/renderer/assets/route-BKcp3psp.js`（359447 → 362699 B） | `/out/renderer/assets/main-CRF7GP33.js`（官方 1312199 → 1321033 B） | 176359724 → 176371810 |
+| 2.1.2 | `/out/renderer/assets/route-BKcp3psp.js`（359447 → 362699 B） | `/out/renderer/assets/main-CRF7GP33.js`（官方 1312199 → 1321623 B，含时间 + 吞吐量） | 176359724 → 176372400 |
 
 ---
 

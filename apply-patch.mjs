@@ -247,7 +247,7 @@ const T_TIME_JS = '(function(){try{' +
     'if(!sid||BUSY[sid])return;var b=apiBase();if(!b)return;BUSY[sid]=1;' +
     'fetch(b+"/api/session/"+sid+"/message").then(function(r){return r.json()}).then(function(j){' +
       'var a=Array.isArray(j)?j:((j&&(j.data||j.messages))||[]);' +
-      'for(var i=0;i<a.length;i++){var m=a[i];if(m&&m.id&&m.time)M.set(m.id,m.time)}' +
+      'for(var i=0;i<a.length;i++){var m=a[i];if(m&&m.id&&m.time)M.set(m.id,{t:m.time,k:m.tokens})}' +
       'then&&then();' +
     '}).catch(function(){}).then(function(){BUSY[sid]=0});' +
   '};' +
@@ -263,12 +263,18 @@ const T_TIME_JS = '(function(){try{' +
       'var sp=metas[i],part=sp.closest("[data-timeline-part-id]"),row=sp.closest("[data-message-id]");' +
       'var pid=part?(part.getAttribute("data-timeline-part-id")||"").split(":")[0]:"";' +
       'var rid=row?row.getAttribute("data-message-id"):"";' +
-      'var t=M.get(pid)||M.get(rid);' +
+      'var rec=M.get(pid)||M.get(rid);var t=rec&&(rec.t||rec),k=rec&&rec.k;' +
       'var host=sp.parentElement;if(!host)continue;' +
       'var el=host.querySelector("[data-oc-done-time]");' +
-      'if(!t||!t.completed){if(el)el.remove();if(!t)want(pid||rid);continue}' +
+      'var el2=host.querySelector("[data-oc-tps]");' +
+      'if(!t||!t.completed){if(el)el.remove();if(el2)el2.remove();if(!t)want(pid||rid);continue}' +
       'if(!el){el=document.createElement("span");el.setAttribute("data-oc-done-time","1");el.style.cssText="margin-left:6px;opacity:.7";host.appendChild(el)}' +
       'var txt="· "+hm(t.completed);if(el.textContent!==txt)el.textContent=txt;' +
+      'var n=k?((k.output||0)+(k.reasoning||0)):0,ms=t.streamed?t.streamed-t.created:t.completed-t.created;' +
+      'var rate=(n>0&&ms>800)?Math.round(n*1000/ms):0;' +
+      'if(!rate){if(el2)el2.remove();continue}' +
+      'if(!el2){el2=document.createElement("span");el2.setAttribute("data-oc-tps","1");el2.style.cssText="margin-left:6px;opacity:.7";if(el.nextSibling)host.insertBefore(el2,el.nextSibling);else host.appendChild(el2)}' +
+      'var txt2="· "+rate+" tok/s";if(el2.textContent!==txt2)el2.textContent=txt2;' +
     '}' +
   '};' +
   'var paintHome=function(){' +
@@ -291,7 +297,7 @@ const T_TIME_JS = '(function(){try{' +
 '}catch(e){}})()';
 
 const D_RULES = [
-  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 消息/会话时间', ',p8=!1,m8=500;', ',p8=!0,m8=500,' + D_TRASH_ICON + ';' + D_MULTI_JS + ';' + T_TIME_JS + ';'],
+  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 消息/会话时间 + 吞吐量', ',p8=!1,m8=500;', ',p8=!0,m8=500,' + D_TRASH_ICON + ';' + D_MULTI_JS + ';' + T_TIME_JS + ';'],
   ['D2 tooltip 文案 归档→删除', 'get value(){return e.language.t(`common.archive`)}', 'get value(){return e.language.t(`common.delete`)}'],
   ['D3 动作标识 home-session-archive→delete', '`home-session-archive`', '`home-session-delete`'],
   ['D4 图标 归档→垃圾桶 + 注册行→会话映射', 'get icon(){return F(hP,{name:`archive`})}', 'get icon(){return globalThis.__ocRegRow$&&globalThis.__ocRegRow$(e.server,e.record.session),globalThis.__ocDeleteApi$=e.onDeleteSession,F(ZZ_TRASH_ICON,{})}'],
