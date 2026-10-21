@@ -1,6 +1,6 @@
 ---
 name: desktop-reasoning-patch
-description: 给 opencode 桌面端（Electron）打三组补丁：①聊天「思考」块流式中展开、思考结束后不立刻折叠（后面最后一块是正文、整轮真结束才直接折，还在调工具/还有下一段思考时都等整块滚出视口上方；折叠时补偿滚动、下方内容不动）、点标题/底部「收起 ▴」/双击空白都能收起、手动开合状态跨重挂载保留；②首页每个会话行悬停时显示垃圾桶删除按钮，点击走官方删除确认框，**按住 Shift 点击直接删（不弹确认框）**，另有「多选删除」模式（右下角悬浮条或会话右键菜单进入，勾选多行一次删完）；③时间与速度：每条助手回复末尾追加完成时间（如「· 14:32」）和输出吞吐量（如「· 65 tok/s」），首页每个会话行右侧显示最后活跃时间（今天 HH:MM、跨天 MM/DD）。在老板升级 opencode 桌面端之后（补丁被覆盖），或老板说「思考折叠没了 / 首页删除按钮没了 / 删除太麻烦 / 看不到回复时间 / 看不到速度 / 升级后要重新打补丁」时使用。
+description: 给 opencode 桌面端（Electron）打三组补丁：①聊天「思考」块流式中展开、思考结束后不立刻折叠（后面最后一块是正文、整轮真结束才直接折，还在调工具/还有下一段思考时都等整块滚出视口上方；折叠时补偿滚动、下方内容不动）、点标题/底部「收起 ▴」/双击空白都能收起、手动开合状态跨重挂载保留；②首页每个会话行悬停时显示垃圾桶删除按钮，点击走官方删除确认框，**按住 Shift 点击直接删（不弹确认框）**，另有「多选删除」模式（右下角悬浮条或会话右键菜单进入，勾选多行一次删完）；③时间与速度：每条助手回复末尾追加完成时间（如「· 14:32」），首页每个会话行右侧显示最后活跃时间（今天 HH:MM、跨天 MM/DD），输入框发送按钮左侧**实时显示当前输出速度**（如「142 tok/s」，流式时出现、结束后约 2 秒淡出）。在老板升级 opencode 桌面端之后（补丁被覆盖），或老板说「思考折叠没了 / 首页删除按钮没了 / 删除太麻烦 / 看不到回复时间 / 看不到速度 / 升级后要重新打补丁」时使用。
 ---
 
 # opencode 桌面端补丁（思考折叠 + 首页会话删除按钮 + 时间/速度显示）
@@ -24,7 +24,7 @@ opencode 桌面端的界面打包在 `<安装目录>\resources\app.asar` 里，�
 7. 一次删很多要方便（2026-10-18 新增）：①**按住 Shift 点垃圾桶** → 跳过确认框直接删；②**多选删除**：右下角悬浮条点「多选删除」（或会话右键菜单选「多选删除」）进多选模式，点行勾选、可「全选」，按「删除 N」→「确认删除 N」一次删完
 8. 每条助手回复末尾显示完成时间（2026-10-19 新增）：官方 meta 行「Build · 模型 · 耗时」后面追加「· 14:32」；流式进行中不显示，消息完成才出现
 9. 首页每个会话行右侧显示最后活跃时间（2026-10-19 新增）：今天显示 `HH:MM`，跨天显示 `MM/DD`，跨年显示 `YYYY/MM/DD`；悬停时排在项目名和垃圾桶按钮之间，不重叠
-10. 每条助手回复末尾显示输出吞吐量（2026-10-21 新增）：在完成时间后面追加「· 65 tok/s」，算法 `(tokens.output + tokens.reasoning) / (time.streamed - time.created)`；耗时不到 800ms 或没有 token 数据就不显示
+10. 输入框发送按钮左侧**实时显示输出速度**（2026-10-21 新增，替代原来的「回复末尾静态 tok/s」）：订阅页面内 SSE（`/api/event`）统计 `session.text.delta` / `session.reasoning.delta` 的字符增量，按 2.5 秒滑动窗口 + token/字符 比例换算成 tok/s；流式时出现，最后一个 delta 后约 2 秒淡出
 
 ## 怎么做
 
@@ -77,7 +77,7 @@ node apply-patch.mjs --out patched.asar
 
 删除/多选补丁的行为验证：`node verify.mjs --delete`（同样要桌面端带调试口）——检查首页行上有垃圾桶按钮、右下角悬浮条在、`__ocMultiEnter$`/`__ocRegRow$`/`__ocDeleteApi$` 三个全局钩子已注入。**需要先切到首页**（在会话视图里 `[data-session-id]` 为 0，会报失败）。它只做存在性检查，不会真删东西。
 
-时间补丁的行为验证：`node verify.mjs --time`——在首页检查每行 `[data-oc-home-time]` 有时间；在会话页检查 `[data-slot="text-part-meta"]` 后面有 `[data-oc-done-time]` 和 `[data-oc-tps]`。它等 2.5s 让 API 数据回来再判定；会话页要有已完成的回复。**当前正在流式输出的会话永远验证不了**（没有完成消息就没有 meta 行），要切到一个历史会话再跑。
+时间/速度补丁的行为验证：`node verify.mjs --time`——在首页检查每行 `[data-oc-home-time]` 有时间；在会话页检查 `[data-slot="text-part-meta"]` 后面有 `[data-oc-done-time]`；速度检查 `__ocSpeedBoot$` 为真、`[data-oc-live-tps]` 元素存在（数字只在流式时才有，静态检查看不到）。它等 2.5s 让 API 数据回来再判定；会话页要有已完成的回复。**当前正在流式输出的会话永远验证不了时间**（没有完成消息就没有 meta 行），要切到一个历史会话再跑；要看速度则必须趁它输出时用 `sample-speed.mjs` 这类采样脚本。
 
 **测试脚本改动时不要直接 `--write`**（它会 `taskkill` 掉真实桌面端）。用假安装目录跑 dry-run / `--out`：
 
@@ -112,16 +112,18 @@ LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar
 | D7 | `showDelete` 加旁路：`(e,t)=>globalThis.__ocSkipConfirm?v(e,t):r.show(…确认框…)`（`v` 是同作用域里的官方内部删除函数，跳过确认框直接 `data.session.remove`）。`onDeleteSession` 就是 `sessions.session.showDelete`，所以行按钮/右键/批量三条路都走这里 |
 | D8 | 会话右键菜单的「删除」项后面追加一项「多选删除」，`onSelect` 调 `globalThis.__ocMultiEnter$(e.server,e.record.session)` 进多选模式并选中该行 |
 
-### 三、时间与速度显示（跟着 D1 一起注入 `T_TIME_JS`，全局 IIFE）
+### 三、时间与速度显示（跟着 D1 一起注入 `T_TIME_JS` + `T_SPEED_JS`，全局 IIFE）
 
 | 位置 | 做什么 |
 |---|---|
 | 回复完成时间 | 监听 DOM，对每个 `[data-slot="text-part-meta"]`（官方「Build · 模型 · 耗时」那行）在后面追加 `<span data-oc-done-time>· HH:MM</span>`。消息 id 取最近的 `[data-component="text-part"][data-timeline-part-id]` 前缀（`msg_xxx:text:0` → `msg_xxx`），兼容祖先 `[data-message-id]`；时间来自 `GET /api/session/<sid>/message` 的 `time.completed`，没有 `completed`（还在流式）就不显示 |
 | 首页活跃时间 | 对每个 `[data-session-id]` 行，在 `[data-slot="home-session-labels"]` 末尾追加 `<span data-oc-home-time>`，值取 `__ocRowMap$` 里该会话的 `session.time.updated`；今天 `HH:MM`，跨天 `MM/DD`，跨年 `YYYY/MM/DD` |
-| 输出吞吐量 | 在同一条 meta 行、完成时间之后追加 `<span data-oc-tps>· 65 tok/s</span>`；`n = tokens.output + tokens.reasoning`，`ms = time.streamed - time.created`（无 `streamed` 时用 `completed`），`rate = n > 0 && ms > 800 ? round(n*1000/ms) : 0`，为 0 就移除 |
-| 消息数据 | `loadSid()` 把每条消息存成 `M.set(m.id, {t: m.time, k: m.tokens})`；`paintMsg()` 用 `M.get(pid) || M.get(rid)` 取回，`rec.t` 是时间、`rec.k` 是 token 统计 |
-| sid 怎么找 | DOM 上不暴露当前会话 id。先扫 `performance.getEntriesByType('resource')` 里的 `/api/session/<sid>/...`，再扫所有 `[data-tab-key]`（格式 `sidecar\n/server/<b64>/session/ses_xxx`，2.1.2 实测 13 个 tab 全在里面，**这条是主力**：2.1.2 的桌面端不再用 HTTP 拉消息，performance 里根本没有 `/api/session/.../message` 记录）；最多取 6 个 sid 并发拉，命中就缓存进 `__ocMsgTime$`（Map，实测一次能缓存 261 条消息时间） |
-| 刷新 | `MutationObserver` 盯 `document.body`（120ms 节流）重绘；首页另有 15s 定时重绘兜底（`session.time.updated` 变化不一定触发 DOM 变更） |
+| 实时速度（`T_SPEED_JS`） | 在 `[data-slot="composer-actions"]` 里 `insertBefore` 一个 `<span data-oc-live-tps>`（发送按钮左侧，11px、`opacity:.5`、`tabular-nums`）。`fetch(apiBase()+"/api/event")` 用 `getReader()` + `TextDecoder` 按 `\n\n` 分帧，取 `data: ` 行的 JSON；`session.text.delta` / `session.reasoning.delta` 的 `delta` 是**增量文本**，把 `{t: performance.now(), n: delta.length}` 推进 `D` |
+| 速度算法 | `WIN=2500` 滑动窗口，`span = max(1000, min(WIN, now - 最老样本))`，`raw = sum(n)/span*1000*k`，`k` 是 token/字符 比；`SHOWN = SHOWN*0.65 + raw*0.35` 指数平滑；每 400ms 重绘；最后一个 delta 超过 `IDLE=2000` 就清空并 `display:none` |
+| `k` 怎么来（`kAdj()`） | 遍历 `__ocMsgTime$`，只收 `c >= 200` 且单条比值落在 `0.25 < n/c < 1.2` 的消息，累加后取**聚合比** `sum(n)/sum(c)`；样本总字符不足 2000 时回退常量 `K=0.6` |
+| 消息数据 | `loadSid()` 把每条消息存成 `M.set(m.id, {t: m.time, k: m.tokens, c: ch})`（`ch` = content 里 text + reasoning 字符数）；`paintMsg()` 用 `M.get(pid) || M.get(rid)` 取回，只取 `rec.t.completed` 画 `· HH:MM`，并顺手 `remove()` 旧版本残留的 `[data-oc-tps]` |
+| sid 怎么找 | DOM 上不暴露当前会话 id。先扫 `performance.getEntriesByType('resource')` 里的 `/api/session/<sid>/...`，再扫所有 `[data-tab-key]`（格式 `sidecar\n/server/<b64>/session/ses_xxx`，2.1.2 实测 13 个 tab 全在里面，**这条是主力**：2.1.2 的桌面端不再用 HTTP 拉消息，performance 里根本没有 `/api/session/.../message` 记录）；最多取 6 个 sid 并发拉，命中就缓存进 `__ocMsgTime$`（Map，实测一次能缓存 269 条消息时间） |
+| 刷新 | `MutationObserver` 盯 `document.body`（120ms 节流）重绘；首页另有 15s 定时重绘兜底（`session.time.updated` 变化不一定触发 DOM 变更）；SSE 事件到达时立即 `paint()` |
 
 时间不写进 asar 里的 chunk 常量，而是作为独立 IIFE 接在 `D_MULTI_JS` 之后（同样在 `p8=!0,m8=500,` 那条声明结尾的 `;` 之后，理由同「坑」里那条）。
 
@@ -148,7 +150,12 @@ LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar
 - 时间补丁**不要塞进** `p8=!0,m8=500,` 那条逗号声明，理由和「坑」里 D1 那条完全一样（IIFE 直接接逗号会 `SyntaxError`）。现在统一放在 `D_MULTI_JS` 后面、以 `;` 分隔的独立语句。
 - 回复时间的 meta 行**只在消息完成后才出现**，所以「流式中不显示时间」是天然的，不需要额外判断 `streaming`；反过来说，`verify.mjs --time` 在会话页必须等 2.5s 让 `/message` 请求回来，否则会误报。
 - **2.1.2 桌面端不再用 HTTP 拉消息**：`performance` 里只有 `/api/info`、`/api/fs/find` 之类，没有 `/api/session/<sid>/message`，所以 `cands()` 的主力是 `[data-tab-key]`（13 个 tab 各带一个 `ses_xxx`）。API base 仍可从任意 `/api/` 资源 URL 的前缀取（`apiBase()` 就是干这个的），别改成只匹配 `/api/session/`。
-- **别在正在流式输出的会话里验证时间/吞吐量**：那个会话的助手消息永远没有 `completed`，也就没有 meta 行，`verify.mjs --time` 和探测脚本都会读到空数组。切到任意历史会话（或首页）再验证。
+- **别在正在流式输出的会话里验证时间**：那个会话的助手消息永远没有 `completed`，也就没有 meta 行，`verify.mjs --time` 和探测脚本都会读到空数组。切到任意历史会话（或首页）再验证。速度那项反过来，**必须趁正在输出时采样**才有数字。
+- **流式中的消息在 DOM 里没有 `data-message-id`**：第一版按 DOM 里的消息 id 白名单过滤 SSE delta，结果一条都匹配不上（`hit: 0`）——`data-message-id` 只挂在已经结束的 `[data-timeline-row="AssistantPart"]` 上，正在输出的那条还没有。别做白名单，直接统计窗口内全部 delta。
+- **`/api/event` 在 Node 里直连是 401**：`{"_tag":"UnauthorizedError","message":"Authentication required"}`，只有页面内 `fetch` 才带得上认证。所以调试速度只能注入到页面里跑（或用 CDP `Runtime.evaluate` 在页面上下文执行），别在外面写脚本拉。
+- **token/字符 比不能用中位数，也不能只用聚合比**：中位数会被纯工具调用消息带偏（`tokens` 有值但 `content` 没文本，比值能到 5.96，中位数算出 0.794）；只用聚合比也会被少数异常样本拉高（实测 0.732 vs 真实 0.62）。正确做法是**先过滤再聚合**：`c >= 200` 且 `0.25 < n/c < 1.2`，剩下的 `sum(n)/sum(c)`。
+- **速度窗口下限别给 500ms**：刚开口的第一秒窗口没填满，拿 500ms 当分母等于把速度乘二（实测飙到 296 tok/s）。下限至少 1000ms。
+- **SSE 断了不会自动重连**：`connect()` 的 `catch` 只吞错误，用久了速度不显示就是这个原因。要修就加重连退避，别在 `paint` 里反复 `fetch`。
 
 ## 升级后锚点找不到怎么办
 
@@ -163,4 +170,4 @@ opencode 升级后 minified 代码会变，`apply-patch.mjs` 会明确报「锚�
 - 2.0.30：思考折叠 chunk `/out/renderer/assets/route-CPNDqx0F.js`（355075 → 356889 字节）；删除按钮 chunk `/out/renderer/assets/main-CfL8Gr4d.js`（1321365 → 1321786 字节）；asar 176341661 → 176343896；`jsonLen` 2172835、`dataStart` 2172852 都不变
 - 2.0.32：思考折叠 chunk `/out/renderer/assets/route-BYzALZ62.js`（357215 → 360467 字节，+3252）；删除按钮 chunk `/out/renderer/assets/main-CZyBNj5O.js`（1321667 官方原版 → 1330501，含多选删除 UI + 时间补丁，+8834）；asar 176346919（官方）→ 176359005；`jsonLen` 2172835、`dataStart` 2172852 仍不变
 - 2.1.1：思考折叠 chunk `/out/renderer/assets/route-B8ouoQvI.js`（357032 → 360284 字节，+3252）；删除按钮 chunk `/out/renderer/assets/main-ptWBkiKT.js`（1311929 官方原版 → 1320763，+8834）；asar 176355995（官方）→ 176368081；`jsonLen` 2172835、`dataStart` 2172852 仍不变。这次变的是 minified 辅助函数名：route 里 `x`(effect)/`U`(prop setter) 变成 `V`/`B`（`Y` 现在是 Show 组件，**不能**再当 effect 用）；main 里 `jP`→`hP`（archive 图标）、`B3.Item`→`G4.Item`（右键菜单）、`bie/xie`→`p8/m8`（行按钮开关）
-- 2.1.2：思考折叠 chunk `/out/renderer/assets/route-BKcp3psp.js`（359447 → 362699 字节，+3252）；删除按钮 chunk `/out/renderer/assets/main-CRF7GP33.js`（1312199 官方原版 → 1321623，含时间 + 吞吐量，+9424）；asar 176359724（官方）→ 176372400；`jsonLen` 2172835、`dataStart` 2172852 仍不变。**锚点零改动**：chunk 文件名变了，但 2.1.1 用的辅助函数名（`V`/`B`/`hP`/`G4.Item`/`p8`/`m8`）全部沿用，2.1.1 的脚本直接打完（加吞吐量后 13 项全绿）。注意：先只加时间时是 `main-CRF7GP33.js` 1312199 → 1321033（+8834）、asar 176371810；再加吞吐量后才是上面的 1321623 / 176372400。
+- 2.1.2：思考折叠 chunk `/out/renderer/assets/route-BKcp3psp.js`（359447 → 362699 字节，+3252）；删除按钮 chunk `/out/renderer/assets/main-CRF7GP33.js`（1312199 官方原版 → 1324054，含时间 + 实时速度，+11855）；asar 176359724（官方）→ 176374831；`jsonLen` 2172835、`dataStart` 2172852 仍不变。**锚点零改动**：chunk 文件名变了，但 2.1.1 用的辅助函数名（`V`/`B`/`hP`/`G4.Item`/`p8`/`m8`）全部沿用，2.1.1 的脚本直接打完（14 项全绿）。演进过程：只加时间时 `main-CRF7GP33.js` 1312199 → 1321033（+8834）、asar 176371810；加 meta 行静态 tok/s 后 1321623 / 176372400；改成发送按钮旁实时速度后 1324054 / 176374831。

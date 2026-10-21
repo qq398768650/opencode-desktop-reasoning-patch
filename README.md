@@ -14,7 +14,7 @@
 
 ## 三、时间与速度显示
 
-**每条助手回复末尾补上完成时间（`· 14:32`）和输出吞吐量（`· 65 tok/s`）→ 首页每个会话行右侧显示最后活跃时间（今天 `14:32`，跨天 `10/16`）**
+**每条助手回复末尾补上完成时间（`· 14:32`）→ 首页每个会话行右侧显示最后活跃时间（今天 `14:32`，跨天 `10/16`）→ 输入框发送按钮左侧实时显示当前输出速度（`142 tok/s`，流式时出现，结束后约 2 秒淡出）**
 
 ---
 
@@ -46,11 +46,12 @@
 |---|---|
 | 1 | 每条助手回复末尾（官方「Build · 模型 · 耗时」那行）追加 **`· 14:32`** 完成时间 |
 | 2 | 消息还在流式输出时**不显示**，回复完成才出现 |
-| 3 | 完成时间后面再追加**输出吞吐量** `· 65 tok/s`，按 `(tokens.output + tokens.reasoning) / (time.streamed - time.created)` 算；耗时不到 800ms 或没有 token 数据就不显示 |
-| 4 | 首页每个会话行右侧显示**最后活跃时间**：今天 `HH:MM`、跨天 `MM/DD`、跨年 `YYYY/MM/DD`；悬停时排在项目名和垃圾桶之间，不重叠 |
-| 5 | 数据全部从后端 `/api/session/<sid>/message` 的 `time.completed` / `tokens` 和 `session.time.updated` 取，不改数据结构、不额外存盘 |
+| 3 | 输入框**发送按钮左侧实时显示输出速度** `142 tok/s`：订阅页面内 SSE 的 `session.text.delta` / `session.reasoning.delta`，按 2.5 秒滑动窗口统计字符增量，再乘 token/字符 比换算成 tok/s；数字带指数平滑，不会乱跳 |
+| 4 | 流式时出现，最后一个 delta 后约 **2 秒**淡出；空闲时不占位 |
+| 5 | 首页每个会话行右侧显示**最后活跃时间**：今天 `HH:MM`、跨天 `MM/DD`、跨年 `YYYY/MM/DD`；悬停时排在项目名和垃圾桶之间，不重叠 |
+| 6 | 时间数据从后端 `/api/session/<sid>/message` 的 `time.completed` 和 `session.time.updated` 取；速度走页面内 SSE，不轮询接口、不改数据结构、不额外存盘 |
 
-官方 2.0.x 只有「默认展开」和「默认折叠」两种静态行为，没有上面第一套；首页也只有一个「归档」入口，没有删除按钮；消息末尾只有「模型 · 耗时」，没有绝对时间，也没有 tok/s。
+官方 2.0.x 只有「默认展开」和「默认折叠」两种静态行为，没有上面第一套；首页也只有一个「归档」入口，没有删除按钮；消息末尾只有「模型 · 耗时」，没有绝对时间；输入框也没有任何速度显示。
 
 ---
 
@@ -81,14 +82,17 @@ node apply-patch.mjs --write
 # 3. 验证：历史思考块默认折叠，点一下能开、再点能收
 node verify.mjs
 
-# 3b. 不想开调试口时，可以先做静态校验（直接查 asar 里三组补丁的 13 个标记）
+# 3b. 不想开调试口时，可以先做静态校验（直接查 asar 里三组补丁的 14 个标记）
 node verify.mjs --static
 
 # 3c. 只查删除/多选补丁有没有注入（要先切到首页；只查存在性，不会真删）
 node verify.mjs --delete
 
-# 3d. 只查时间/速度补丁（首页看行时间、会话页看回复完成时间和 tok/s；要在有已完成回复的历史会话里跑）
+# 3d. 只查时间/速度补丁（首页看行时间、会话页看回复完成时间、检查实时速度的启动标记；要在有已完成回复的历史会话里跑）
 node verify.mjs --time
+
+# 3e. 采样实时速度（趁助手正在输出时跑，每 500ms 读一次发送按钮旁的 tok/s）
+node sample-speed.mjs
 
 # 4. 想撤销补丁、回到官方原版（自动：关桌面端 → 盖回备份 → 再开回来）
 node apply-patch.mjs --restore
@@ -140,7 +144,7 @@ node apply-patch.mjs --out patched.asar
 
 | 标记 | 改什么 |
 |---|---|
-| **D1** | 把开关 `,p8=!1,m8=500;` 改成 `,p8=!0,m8=500,` + 内联 16×16 垃圾桶图标组件（`ZZ_TRASH_ICON`）；多选删除 UI 的 IIFE（`D_MULTI_JS`）和时间/吞吐量的 IIFE（`T_TIME_JS`）接在声明**结尾 `;` 之后**当独立语句（不能塞进那个逗号列表，见「已知坑」） |
+| **D1** | 把开关 `,p8=!1,m8=500;` 改成 `,p8=!0,m8=500,` + 内联 16×16 垃圾桶图标组件（`ZZ_TRASH_ICON`）；多选删除 UI 的 IIFE（`D_MULTI_JS`）、时间 IIFE（`T_TIME_JS`）、实时速度 IIFE（`T_SPEED_JS`）接在声明**结尾 `;` 之后**当独立语句（不能塞进那个逗号列表，见「已知坑」） |
 | **D2** | 按钮文案 `common.archive` → `common.delete`（"归档"→"删除"） |
 | **D3** | 按钮 `data-action` `home-session-archive` → `home-session-delete` |
 | **D4** | 图标 `archive` → 垃圾桶；顺手注册行→会话映射（`__ocRegRow$`）、把官方 `onDeleteSession` 存进 `__ocDeleteApi$` |
@@ -156,10 +160,12 @@ node apply-patch.mjs --out patched.asar
 | 标记 | 做什么 |
 |---|---|
 | **T1 回复完成时间** | 扫 `[data-slot="text-part-meta"]`（官方「Build · 模型 · 耗时」行），从最近的 `[data-timeline-part-id="msg_xxx:text:0"]` 取消息 id，在 `time.completed` 存在时往同级追加 `<span data-oc-done-time>· HH:MM</span>` |
-| **T2 输出吞吐量** | 同一条 meta 行、完成时间之后追加 `<span data-oc-tps>· 65 tok/s</span>`：`n = tokens.output + tokens.reasoning`，`ms = time.streamed - time.created`（无 `streamed` 用 `completed`），`rate = n > 0 && ms > 800 ? round(n*1000/ms) : 0`，为 0 就不显示 |
-| **T3 首页活跃时间** | 扫首页 `[data-session-id]` 行，从 `__ocRowMap$` 取 `session.time.updated`，在 `[data-slot="home-session-labels"]` 末尾追加 `<span data-oc-home-time>`（`flex:0 0 auto`，右对齐） |
-| **T4 数据来源** | 后端 API base 从 `performance.getEntriesByType('resource')` 里最近的 `http://127.0.0.1:<port>/api/` 取（端口每次重启都变，不能写死）；会话 id 从 URL 和 `[data-tab-key]` 里收集（2.1.2 的桌面端不再用 HTTP 拉消息，`performance` 里没有 `/api/session/.../message`，`[data-tab-key]` 才是主力），`GET /api/session/<sid>/message` 命中消息 id 后缓存 `{time, tokens}` 进 `__ocMsgTime$` |
-| **T5 重绘** | `MutationObserver` 盯 `document.body`（120ms 节流）+ 首页 15s 定时兜底（`time.updated` 变化不必然触发 DOM 变更） |
+| **T2 实时速度** | 在 `[data-slot="composer-actions"]` 里发送按钮左侧插 `<span data-oc-live-tps>`。`fetch(apiBase()+"/api/event")` 读 SSE 流（`getReader()` + `TextDecoder`，按 `\n\n` 分帧），`session.text.delta` / `session.reasoning.delta` 的 `delta` 是增量文本，把长度记进数组 `D` |
+| **T3 速度算法** | `WIN=2500` 滑动窗口，`span=max(1000, min(WIN, now-最老样本))`，`raw=sum(n)/span*1000*k`，`SHOWN=SHOWN*0.65+raw*0.35` 平滑，400ms 重绘；最后一个 delta 超过 `IDLE=2000` 清空并隐藏 |
+| **T4 比例 `k`** | 从 `__ocMsgTime$` 反推：只收 `c>=200` 且 `0.25<n/c<1.2` 的消息（过滤纯工具调用和 reasoning 被摘要的异常样本），取聚合比 `sum(n)/sum(c)`；样本不足 2000 字符时用常量 `0.6` |
+| **T5 首页活跃时间** | 扫首页 `[data-session-id]` 行，从 `__ocRowMap$` 取 `session.time.updated`，在 `[data-slot="home-session-labels"]` 末尾追加 `<span data-oc-home-time>`（`flex:0 0 auto`，右对齐） |
+| **T6 数据来源** | 后端 API base 从 `performance.getEntriesByType('resource')` 里最近的 `http://127.0.0.1:<port>/api/` 取（端口每次重启都变，不能写死）；会话 id 从 URL 和 `[data-tab-key]` 里收集（2.1.2 的桌面端不再用 HTTP 拉消息，`performance` 里没有 `/api/session/.../message`，`[data-tab-key]` 才是主力），`GET /api/session/<sid>/message` 命中消息 id 后缓存 `{time, tokens, chars}` 进 `__ocMsgTime$` |
+| **T7 重绘** | `MutationObserver` 盯 `document.body`（120ms 节流）+ 首页 15s 定时兜底（`time.updated` 变化不必然触发 DOM 变更）；SSE delta 到达时立即重绘 |
 
 两个目标 chunk 必须**串行**重建：每替换一个文件都会平移它之后所有文件的 offset，第二个要在第一个的结果上继续。
 
@@ -185,6 +191,11 @@ node apply-patch.mjs --out patched.asar
 - **会话页里查不到 `[data-session-id]`**（那是首页行专用），当前会话 id 只能从 `/api/session/<sid>/message` 的请求记录和 `[data-tab-key]` 反推，不能信「最近一次请求的 sid」。
 - 时间 IIFE **不能塞进 `p8=!0,m8=500,` 那条逗号声明**（同 D1 的坑），只能接在 `;` 后面。
 - 回复时间的 meta 行**只在消息完成后才渲染**，「流式中不显示」是天然行为；`verify.mjs --time` 因此要等 2.5s 让 `/message` 回来，否则误报。
+- **流式中的消息在 DOM 里没有 `data-message-id`**：第一版按 DOM 消息 id 白名单过滤 SSE delta，`hit: 0`——`data-message-id` 只挂在已结束的 `[data-timeline-row="AssistantPart"]` 上。别做白名单，直接统计窗口内全部 delta。
+- **`/api/event` 在 Node 里直连是 401**（`{"_tag":"UnauthorizedError"}`），只有页面内 `fetch` 带得上认证。调试速度只能在页面上下文跑（CDP `Runtime.evaluate`）。
+- **token/字符 比要「先过滤再聚合」**：中位数会被纯工具调用消息带偏（比值到 5.96，中位数 0.794）；纯聚合比也会被少数异常拉高（0.732 vs 真实 0.62）。正确做法是 `c>=200` 且 `0.25<n/c<1.2` 过滤后取 `sum(n)/sum(c)`。
+- **速度窗口下限别给 500ms**：刚开口第一秒窗口没填满，500ms 当分母等于乘二（实测 296 tok/s），下限至少 1000ms。
+- **SSE 断了不会自动重连**：`connect()` 的 `catch` 只吞错误；用久了速度不显示就是这个原因，要修就加重连退避。
 
 ## 升级后锚点找不到
 
@@ -202,7 +213,7 @@ opencode 升级后 minified 代码会变，脚本会报「锚点没找到」。�
 | 2.0.30 | `/out/renderer/assets/route-CPNDqx0F.js`（355075 → 356889 B） | `/out/renderer/assets/main-CfL8Gr4d.js`（1321365 → 1321786 B） | 176341661 → 176343896 |
 | 2.0.32 | `/out/renderer/assets/route-BYzALZ62.js`（357215 → 360467 B） | `/out/renderer/assets/main-CZyBNj5O.js`（官方 1321667 → 1330501 B，含多选删除 + 时间） | 176346919 → 176359005 |
 | 2.1.1 | `/out/renderer/assets/route-B8ouoQvI.js`（357032 → 360284 B） | `/out/renderer/assets/main-ptWBkiKT.js`（官方 1311929 → 1320763 B） | 176355995 → 176368081 |
-| 2.1.2 | `/out/renderer/assets/route-BKcp3psp.js`（359447 → 362699 B） | `/out/renderer/assets/main-CRF7GP33.js`（官方 1312199 → 1321623 B，含时间 + 吞吐量） | 176359724 → 176372400 |
+| 2.1.2 | `/out/renderer/assets/route-BKcp3psp.js`（359447 → 362699 B） | `/out/renderer/assets/main-CRF7GP33.js`（官方 1312199 → 1324054 B，含时间 + 实时速度） | 176359724 → 176374831 |
 
 ---
 
