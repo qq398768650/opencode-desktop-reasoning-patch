@@ -67,3 +67,16 @@ node verify.mjs                 # 思考折叠行为（需要会话里有已完�
 - commit message 用中文，首行说清「改了什么 + 为什么」，需要时在正文列要点
 - 一次提交只做一件事；锚点随版本更新时，在 commit 正文写明新版本号和新的 chunk 文件名 / 大小
 - 文档和代码同步改：新增规则要同时更新 `SKILL.md` 的 D/P 表、`README.md` 的「原理」、`使用说明.md` 的效果列表
+
+## 发布约定
+
+**tag / GitHub Release 的版本号 = 适配的 opencode 桌面端版本号**，不带自己的语义化补丁号（历史遗留的 `v2.0.30.1` / `v2.0.30.2` 不再沿用）。
+
+```bash
+cd ~/.config/opencode/skills/desktop-reasoning-patch
+git tag v2.1.3                      # 与 opencode 桌面端 FileVersion 完全一致
+git push origin v2.1.3
+gh release create v2.1.3 --title "v2.1.3 — 适配 opencode 桌面端 2.1.3" --notes "..."
+```
+
+发布前确认三件事：① 本机桌面端版本 = tag 版本；② `node apply-patch.mjs` dry-run 全 OK、`node verify.mjs --static` 19 项全绿；③ README 的「支持版本」与「历史版本对照」表已加该行。补丁自身的修复（不涉及新锚点）直接进 `main`，不另开 tag。
