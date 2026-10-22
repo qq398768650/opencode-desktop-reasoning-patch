@@ -230,135 +230,8 @@ const D_MULTI_JS = '(function(){try{' +
 //     sid 不直接暴露在 DOM 上：先试「最近一次 /api/session/<sid>/message 请求」的 sid，
 //     再用 tab 的 data-tab-key 和 performance 里出现过的 sid 兜底，命中即缓存。
 //   - 首页活跃时间：__ocRowMap$ 里的 session.time.updated（毫秒）。
-const T_TIME_JS = '(function(){try{' +
-  'if(typeof document==="undefined"||globalThis.__ocTimeBoot$)return;' +
-  'globalThis.__ocTimeBoot$=1;' +
-  'var p2=function(n){return n<10?"0"+n:""+n};' +
-  'var hm=function(ts){var d=new Date(ts);return p2(d.getHours())+":"+p2(d.getMinutes())};' +
-  'var fmt=function(ts){if(!ts)return "";var d=new Date(ts),n=new Date();if(d.toDateString()===n.toDateString())return hm(ts);var s=p2(d.getMonth()+1)+"/"+p2(d.getDate());if(d.getFullYear()!==n.getFullYear())s=d.getFullYear()+"/"+s;return s};' +
-  'var M=globalThis.__ocMsgTime$||(globalThis.__ocMsgTime$=new Map());' +
-  'var SID=globalThis.__ocMsgSid$||(globalThis.__ocMsgSid$={lastTry:0});' +
-  'var BUSY={};' +
-  'var apiBase=function(){var es=performance.getEntriesByType("resource");for(var i=es.length-1;i>=0;i--){var u=es[i].name,k=u.indexOf("/api/");if(k>0&&/^https?:/.test(u))return u.slice(0,k)}return ""};' +
-  'var cands=function(){var out=[],seen={},i;' +
-    'var es=performance.getEntriesByType("resource");' +
-    'for(i=es.length-1;i>=0;i--){var u=es[i].name,k=u.indexOf("/api/session/");if(k<0)continue;var rest=u.slice(k+13),j=rest.indexOf("/"),id=j<0?rest:rest.slice(0,j);if(id.indexOf("ses_")===0&&!seen[id]){seen[id]=1;out.push(id)}}' +
-    'var ts=document.querySelectorAll("[data-tab-key]");' +
-    'for(i=0;i<ts.length;i++){var key=ts[i].getAttribute("data-tab-key")||"",k2=key.indexOf("/session/ses_");if(k2<0)continue;var id2=key.slice(k2+9).split("/")[0];if(id2.indexOf("ses_")===0&&!seen[id2]){seen[id2]=1;out.push(id2)}}' +
-    'return out;' +
-  '};' +
-  'var loadSid=function(sid,then){' +
-    'if(!sid||BUSY[sid])return;var b=apiBase();if(!b)return;BUSY[sid]=1;' +
-    'fetch(b+"/api/session/"+sid+"/message").then(function(r){return r.json()}).then(function(j){' +
-      'var a=Array.isArray(j)?j:((j&&(j.data||j.messages))||[]);' +
-      'for(var i=0;i<a.length;i++){var m=a[i];if(m&&m.id&&m.time){var ch=0;if(m.content)for(var q=0;q<m.content.length;q++){var pp=m.content[q];if(pp&&(pp.type==="text"||pp.type==="reasoning"))ch+=(pp.text||"").length}M.set(m.id,{t:m.time,k:m.tokens,c:ch})}}' +
-      'then&&then();' +
-    '}).catch(function(){}).then(function(){BUSY[sid]=0});' +
-  '};' +
-  'var want=function(mid){' +
-    'if(!mid||M.has(mid))return;var now=Date.now();' +
-    'if(now-(SID.lastTry||0)<2500)return;SID.lastTry=now;' +
-    'var list=cands(),i;' +
-    'for(i=0;i<list.length&&i<6;i++){(function(s){loadSid(s,function(){paintAll()})})(list[i])}' +
-  '};' +
-  'var paintMsg=function(){' +
-    'var metas=document.querySelectorAll("[data-slot=text-part-meta]");' +
-    'for(var i=0;i<metas.length;i++){' +
-      'var sp=metas[i],part=sp.closest("[data-timeline-part-id]"),row=sp.closest("[data-message-id]");' +
-      'var pid=part?(part.getAttribute("data-timeline-part-id")||"").split(":")[0]:"";' +
-      'var rid=row?row.getAttribute("data-message-id"):"";' +
-      'var rec=M.get(pid)||M.get(rid);var t=rec&&(rec.t||rec);' +
-      'var host=sp.parentElement;if(!host)continue;' +
-      'var el=host.querySelector("[data-oc-done-time]");' +
-      'var stale=host.querySelector("[data-oc-tps]");if(stale)stale.remove();' +
-      'if(!t||!t.completed){if(el)el.remove();if(!t)want(pid||rid);continue}' +
-      'if(!el){el=document.createElement("span");el.setAttribute("data-oc-done-time","1");el.style.cssText="margin-left:6px;opacity:.7";host.appendChild(el)}' +
-      'var txt="· "+hm(t.completed);if(el.textContent!==txt)el.textContent=txt;' +
-    '}' +
-  '};' +
-  'var paintHome=function(){' +
-    'var rows=document.querySelectorAll("[data-session-id]"),i;' +
-    'for(i=0;i<rows.length;i++){' +
-      'var el=rows[i],id=el.getAttribute("data-session-id"),rec=globalThis.__ocRowMap$&&globalThis.__ocRowMap$.get(id);' +
-      'var ts=rec&&rec.session&&rec.session.time&&rec.session.time.updated;' +
-      'var host=el.querySelector("[data-slot=home-session-labels]");if(!host)continue;' +
-      'var sp=host.querySelector("[data-oc-home-time]");' +
-      'if(!ts){if(sp)sp.remove();continue}' +
-      'if(!sp){sp=document.createElement("span");sp.setAttribute("data-oc-home-time","1");sp.style.cssText="flex:0 0 auto;font-size:11px;line-height:1;opacity:.55;padding-left:6px;font-variant-numeric:tabular-nums";host.appendChild(sp)}' +
-      'var txt=fmt(ts);if(sp.textContent!==txt)sp.textContent=txt;' +
-    '}' +
-  '};' +
-  'var paintAll=function(){paintMsg();paintHome()};' +
-  'var tick=function(){if(globalThis.__ocTimeT$)return;globalThis.__ocTimeT$=setTimeout(function(){globalThis.__ocTimeT$=0;paintAll()},120)};' +
-  'try{var mo=new MutationObserver(tick);mo.observe(document.body||document.documentElement,{childList:!0,subtree:!0})}catch(e){}' +
-  'setInterval(paintHome,15000);' +
-  'paintAll();' +
-'}catch(e){}})()';
-
-const T_SPEED_JS = '(function(){try{' +
-  'if(typeof document==="undefined"||globalThis.__ocSpeedBoot$)return;' +
-  'globalThis.__ocSpeedBoot$=1;' +
-  'var K=0.6,WIN=2500,IDLE=2000;' +
-  'var D=[];' +
-  'var kAdj=function(){' +
-    'var M=globalThis.__ocMsgTime$;if(!M||!M.size)return K;' +
-    'var tk=0,ch=0,it=M.values(),x;' +
-    'while(!(x=it.next()).done){var v=x.value;if(v&&v.k&&v.c>=200){var n=(v.k.output||0)+(v.k.reasoning||0);var r=n/v.c;if(n>0&&r>0.25&&r<1.2){tk+=n;ch+=v.c}}}' +
-    'if(ch<2000||!tk)return K;' +
-    'return tk/ch;' +
-  '};' +
-  'var apiBase=function(){var es=performance.getEntriesByType("resource");for(var i=es.length-1;i>=0;i--){var u=es[i].name,k=u.indexOf("/api/");if(k>0&&/^https?:/.test(u))return u.slice(0,k)}return ""};' +
-  'var host=function(){return document.querySelector("[data-slot=composer-actions]")};' +
-  'var ensure=function(){' +
-    'var ca=host();if(!ca)return null;' +
-    'var s=ca.querySelector("[data-oc-live-tps]");' +
-    'if(!s){s=document.createElement("span");s.setAttribute("data-oc-live-tps","1");s.style.cssText="font-size:11px;line-height:1;opacity:.5;margin-right:8px;font-variant-numeric:tabular-nums;white-space:nowrap";ca.insertBefore(s,ca.firstChild)}' +
-    'return s;' +
-  '};' +
-  'var paint=function(){' +
-    'var s=ensure();if(!s)return;' +
-    'var now=performance.now(),cut=now-WIN,i,sum=0,oldest=now,last=0;' +
-    'for(i=D.length-1;i>=0;i--){var r=D[i];if(r.t<cut)break;sum+=r.n;if(r.t<oldest)oldest=r.t;if(r.t>last)last=r.t}' +
-    'while(D.length&&D[0].t<now-8000)D.shift();' +
-    'if(!sum||now-last>IDLE){if(s.textContent)s.textContent="";s.style.display="none";return}' +
-    'var span=Math.min(WIN,now-oldest);if(span<1000)span=1000;' +
-    'var raw=sum/span*1000*kAdj();' +
-    's.style.display="";' +
-    'var txt=Math.round(raw)+" tok/s";' +
-    'if(s.textContent!==txt)s.textContent=txt;' +
-  '};' +
-  'var connect=function(){' +
-    'var b=apiBase();if(!b)return;' +
-    'fetch(b+"/api/event").then(function(r){' +
-      'if(!r.ok||!r.body)return;' +
-      'var rd=r.body.getReader(),dec=new TextDecoder(),buf="";' +
-      'var pump=function(){rd.read().then(function(x){' +
-        'if(x.done)return;' +
-        'buf+=dec.decode(x.value,{stream:true});' +
-        'var i;' +
-        'while((i=buf.indexOf("\\n\\n"))>=0){' +
-          'var raw=buf.slice(0,i);buf=buf.slice(i+2);' +
-          'var line="",ls=raw.split("\\n");' +
-          'for(var j=0;j<ls.length;j++){if(ls[j].indexOf("data: ")===0){line=ls[j].slice(6);break}}' +
-          'if(!line)continue;' +
-          'var ev;try{ev=JSON.parse(line)}catch(e){continue}' +
-          'var dd=ev.data;if(!dd)continue;' +
-          'if((ev.type==="session.text.delta"||ev.type==="session.reasoning.delta")&&dd.delta&&dd.assistantMessageID){' +
-            'D.push({t:performance.now(),n:dd.delta.length,mid:dd.assistantMessageID});' +
-            'paint();' +
-          '}else if(ev.type==="session.text.ended"||ev.type==="session.step.ended"||ev.type==="session.execution.succeeded"){' +
-            'setTimeout(paint,1400);' +
-          '}' +
-        '}' +
-        'pump();' +
-      '}).catch(function(){})};' +
-      'pump();' +
-    '}).catch(function(){});' +
-  '};' +
-  'setInterval(paint,400);' +
-  'var boot=function(){if(apiBase()){connect()}else{setTimeout(boot,1000)}};' +
-  'boot();' +
-'}catch(e){}})()';
+// 第三组：时间 / 用量 / 速度 / 会话统计（参照 dsh 的布局，源码在 inject/time-stats.js）
+const T_TIME_JS = fs.readFileSync(path.join(HERE, 'inject', 'time-stats.js'), 'utf8').trim();
 
 // 第四组：Ctrl+左键点会话里的文件路径 → 资源管理器打开所在目录并选中文件
 const T_FILE_JS = fs.readFileSync(path.join(HERE, 'inject', 'file-reveal.js'), 'utf8').trim();
@@ -381,7 +254,7 @@ const MAIN_REVEAL_JS = ';import("electron").then(function(m){try{m.ipcMain.handl
   '}catch(x){return!1}})}catch(x){}});';
 
 const D_RULES = [
-  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 消息/会话时间 + 实时速度 + 文件定位', ',p8=!1,m8=500;', ',p8=!0,m8=500,' + D_TRASH_ICON + ';' + D_MULTI_JS + ';' + T_TIME_JS + ';' + T_SPEED_JS + ';' + T_FILE_JS + ';'],
+  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 时间/用量/速度/会话统计 + 文件定位', ',p8=!1,m8=500;', ',p8=!0,m8=500,' + D_TRASH_ICON + ';' + D_MULTI_JS + ';' + T_TIME_JS + ';' + T_FILE_JS + ';'],
   ['D2 tooltip 文案 归档→删除', 'get value(){return e.language.t(`common.archive`)}', 'get value(){return e.language.t(`common.delete`)}'],
   ['D3 动作标识 home-session-archive→delete', '`home-session-archive`', '`home-session-delete`'],
   ['D4 图标 归档→垃圾桶 + 注册行→会话映射', 'get icon(){return F(hP,{name:`archive`})}', 'get icon(){return globalThis.__ocRegRow$&&globalThis.__ocRegRow$(e.server,e.record.session),globalThis.__ocDeleteApi$=e.onDeleteSession,F(ZZ_TRASH_ICON,{})}'],

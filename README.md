@@ -12,9 +12,9 @@
 
 **一次删很多**：按住 **Shift** 点垃圾桶 = 跳过确认框直接删；或进**多选删除**模式（右下角悬浮条点「多选删除」，或会话右键菜单选「多选删除」），点行勾选（可「全选」），按「删除 N」→「确认删除 N」一次删完。
 
-## 三、时间与速度显示
+## 三、时间 / 用量 / 速度（布局参照 dsh）
 
-**每条助手回复末尾补上完成时间（`· 14:32`）→ 首页每个会话行右侧显示最后活跃时间（今天 `14:32`，跨天 `10/16`）→ 输入框发送按钮左侧实时显示当前输出速度（`142 tok/s`，流式时出现，结束后约 2 秒淡出）**
+**每条助手回复的操作按钮行右侧补上 `用量 33.2K tok   10月16日 14:34`（点用量弹本轮明细）→ 输入框下方一行三块统计 `⟳ 2 轮 37 步 · 97 tok/s` / `▤ 1.6M tok · 缓存命中 95%` / `◑ 1%`，三块都能点开面板 → 发送按钮左侧实时显示当前输出速度（`142 tok/s`，流式时出现，结束后约 2 秒淡出）→ 首页每个会话行右侧显示最后活跃时间（今天 `14:32`，跨天 `10/16`）**
 
 ## 四、文件定位
 
@@ -46,16 +46,19 @@
 | 4 | 右下角悬浮条「多选删除」（或会话右键菜单「多选删除」）进多选模式：点行勾选、可「全选」，「删除 N」按一次变「确认删除 N」，再按就批量删完 |
 | 5 | 复用官方写死关闭的删除开关 + 官方 `onDeleteSession`，不自己实现删除逻辑；只影响首页会话行，会话页里的归档按钮不动 |
 
-### 时间与速度显示
+### 时间 / 用量 / 速度
 
 | # | 行为 |
 |---|---|
-| 1 | 每条助手回复末尾（官方「Build · 模型 · 耗时」那行）追加 **`· 14:32`** 完成时间 |
-| 2 | 消息还在流式输出时**不显示**，回复完成才出现 |
-| 3 | 输入框**发送按钮左侧实时显示输出速度** `142 tok/s`：订阅页面内 SSE 的 `session.text.delta` / `session.reasoning.delta`，按 2.5 秒滑动窗口统计字符增量，再乘 token/字符 比换算成 tok/s；窗口本身是移动平均，不再叠指数平滑，数字反映当下瞬时速度 |
-| 4 | 流式时出现，最后一个 delta 后约 **2 秒**淡出；空闲时不占位 |
-| 5 | 首页每个会话行右侧显示**最后活跃时间**：今天 `HH:MM`、跨天 `MM/DD`、跨年 `YYYY/MM/DD`；悬停时排在项目名和垃圾桶之间，不重叠 |
-| 6 | 时间数据从后端 `/api/session/<sid>/message` 的 `time.completed` 和 `session.time.updated` 取；速度走页面内 SSE，不轮询接口、不改数据结构、不额外存盘 |
+| 1 | 每条助手回复的操作按钮行右侧显示 **`用量 33.2K tok`** 和完成时间 **`10月16日 14:34`**（今天只显示 `14:32`，跨年带年份），靠右对齐 |
+| 2 | 点「用量」弹 **本轮用量** 面板：总量、提供方/模型、缓存命中、未缓存输入、缓存读取、输出、其中推理 |
+| 3 | 消息还在流式输出时**不显示**，回复完成才出现 |
+| 4 | 输入框下方一行三块统计：**`⟳ 2 轮 37 步 · 97 tok/s`**、**`▤ 1.6M tok · 缓存命中 95%`**、**`◑ 1%`** |
+| 5 | 三块都能点开：**会话统计**（模型用时 / 工具调用用时 / 首 token 平均 TTFT / 输出速度 TPS）、**Token 用量**（总量、缓存命中、未缓存输入、缓存读取、输出、其中推理）、**上下文已用**（百分比、`~12K / 1M`、进度条、对话消息占用） |
+| 6 | 输入框**发送按钮左侧实时显示输出速度** `142 tok/s`：订阅页面内 SSE 的 `session.text.delta` / `session.reasoning.delta`，按 2.5 秒滑动窗口统计字符增量，再乘 token/字符 比换算成 tok/s；窗口本身是移动平均，不再叠指数平滑 |
+| 7 | 流式时出现，最后一个 delta 后约 **2 秒**淡出；空闲时不占位 |
+| 8 | 首页每个会话行右侧显示**最后活跃时间**：今天 `HH:MM`、跨天 `MM/DD`、跨年 `YYYY/MM/DD`；悬停时排在项目名和垃圾桶之间，不重叠 |
+| 9 | 数据从后端 `/api/session/<sid>/message`（`time` / `tokens` / `model`）、`/api/session/<sid>`（会话累计 `tokens`）、`/api/model`（`limit.context`）取；速度走页面内 SSE，不轮询接口、不改数据结构、不额外存盘 |
 
 官方 2.0.x 只有「默认展开」和「默认折叠」两种静态行为，没有上面第一套；首页也只有一个「归档」入口，没有删除按钮；消息末尾只有「模型 · 耗时」，没有绝对时间；输入框也没有任何速度显示；点路径只会选中文本，不会打开目录。
 
@@ -107,7 +110,7 @@ node apply-patch.mjs --write
 # 3. 验证：历史思考块默认折叠，点一下能开、再点能收
 node verify.mjs
 
-# 3b. 不想开调试口时，可以先做静态校验（直接查 asar 里四组补丁的 17 个标记）
+# 3b. 不想开调试口时，可以先做静态校验（直接查 asar 里四组补丁的 19 个标记）
 node verify.mjs --static
 
 # 3c. 只查删除/多选补丁有没有注入（要先切到首页；只查存在性，不会真删）
@@ -179,13 +182,16 @@ node apply-patch.mjs --out patched.asar
 | **D7** | `showDelete` 加旁路 `globalThis.__ocSkipConfirm ? v(e,t) : r.show(确认框)`（`v` 是官方内部删除函数，`onDeleteSession` 就是 `showDelete`） |
 | **D8** | 会话右键菜单「删除」项后追加「多选删除」项，`onSelect` 调 `__ocMultiEnter$` 进多选模式 |
 
-### 时间与速度显示（不新增锚点，IIFE 跟着 D1 注入）
+### 时间 / 用量 / 速度（不新增锚点，IIFE 跟着 D1 注入）
 
 纯 DOM 注入，不改官方组件逻辑：
 
 | 标记 | 做什么 |
 |---|---|
-| **T1 回复完成时间** | 扫 `[data-slot="text-part-meta"]`（官方「Build · 模型 · 耗时」行），从最近的 `[data-timeline-part-id="msg_xxx:text:0"]` 取消息 id，在 `time.completed` 存在时往同级追加 `<span data-oc-done-time>· HH:MM</span>` |
+| **T0 消息行用量 + 时间** | 官方 `[data-slot="text-part-meta"]` 的父级就是 dsh 的 `MessageIconActions` 位置（`display:flex`，第一个子是「复制回复」按钮）。往同级末尾追加 `<span data-oc-usage>用量 33.2K tok</span>`（`margin-left:auto` 靠右）和 `<span data-oc-done-time>10月16日 14:34</span>`；消息 id 取最近的 `[data-timeline-part-id="msg_xxx:text:0"]` 前缀，`time.completed` 存在才显示 |
+| **T1 用量面板** | 点 `[data-oc-usage]` 弹 `[data-oc-usage-panel]`（fixed、跟随锚点、点外部/滚动关闭）：本轮用量、提供方/模型、缓存命中、未缓存输入、缓存读取、输出、其中推理 |
+| **T1b 底部统计条** | `ensureStats()` 在 `form[data-component="composer"]` 的父级、`form.nextSibling` 插 `[data-oc-stats]`（`pointer-events:auto`），三个 pill `[data-oc-stat=rounds|usage|ctx]`：轮数/步数/TPS、累计 token/缓存命中、上下文百分比 |
+| **T1c 三个统计面板** | `rounds` → 会话统计（模型用时 `Σ(completed-created)`、工具用时 `span-decMs`、TTFT、TPS）；`usage` → Token 用量（`session.tokens` 累计）；`ctx` → 上下文已用（`lastCtx/limit.context` + 进度条） |
 | **T2 实时速度** | 在 `[data-slot="composer-actions"]` 里发送按钮左侧插 `<span data-oc-live-tps>`。`fetch(apiBase()+"/api/event")` 读 SSE 流（`getReader()` + `TextDecoder`，按 `\n\n` 分帧），`session.text.delta` / `session.reasoning.delta` 的 `delta` 是增量文本，把长度记进数组 `D` |
 | **T3 速度算法** | `WIN=2500` 滑动窗口，`span=max(1000, min(WIN, now-最老样本))`，`raw=sum(n)/span*1000*k`，400ms 重绘；最后一个 delta 超过 `IDLE=2000` 清空并隐藏（窗口滑出时数字自然衰减，不需要额外平滑） |
 | **T4 比例 `k`** | 从 `__ocMsgTime$` 反推：只收 `c>=200` 且 `0.25<n/c<1.2` 的消息（过滤纯工具调用和 reasoning 被摘要的异常样本），取聚合比 `sum(n)/sum(c)`；样本不足 2000 字符时用常量 `0.6` |

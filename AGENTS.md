@@ -8,7 +8,7 @@
 
 - 思考折叠：流式展开 → 思考结束先摊着 → 整轮结束（最后一块是正文）才直接折，还在调工具/还有下一段思考就等整块滚出视口上方（折叠时补偿滚动，下方内容不动）
 - 首页会话删除：会话行悬停出垃圾桶，点击走官方确认框；Shift 点击免确认；另有「多选删除」模式批量删
-- 时间与速度显示：助手回复末尾补完成时间（`· 14:32`），首页会话行右侧补最后活跃时间（今天 `HH:MM`、跨天 `MM/DD`），输入框发送按钮左侧实时显示输出速度（`142 tok/s`，流式时出现，结束后约 2 秒淡出）
+- 时间 / 用量 / 速度（参照 dsh）：助手回复的操作按钮行右侧显示 `用量 33.2K tok` + 完成时间（今天 `14:32`、同年 `10月16日 14:34`、跨年带年份），点用量弹本轮明细；输入框下方一行三块统计 `⟳ 2 轮 37 步 · 97 tok/s` / `▤ 1.6M tok · 缓存命中 95%` / `◑ 1%`，三块都能点开面板；发送按钮左侧实时显示输出速度（`142 tok/s`，流式时出现，结束后约 2 秒淡出）；首页会话行右侧显示最后活跃时间
 - 文件定位：会话里 Ctrl+左键点文件路径（正文路径、编辑/写入文件卡片上的文件名都行）→ 资源管理器打开所在目录并选中该文件
 
 **目标文件是打包产物，不是源码。** 所有改动都是对 minified chunk 做字符串替换，opencode 一升级锚点就会失效。
@@ -20,7 +20,7 @@
 | `apply-patch.mjs` | 唯一的主脚本：找安装目录 → 定位两个 renderer chunk（+ preload、主进程）→ 打四组补丁 → 串行重建 asar。支持 dry-run / `--out` / `--write` / `--restore` |
 | `inject/file-reveal.js` | 文件定位补丁的 renderer 注入源码，`apply-patch.mjs` 读进来内联进 chunk（不单独部署） |
 | `commands/reasoning-patch.md` | `/reasoning-patch` 斜杠命令源文件；`--write` 会自动装到 `~/.config/opencode/commands/` |
-| `verify.mjs` | 校验。无参数 = CDP 行为验证（思考折叠）；`--delete` = CDP 查删除/多选补丁注入；`--time` = CDP 查时间/速度；`--static` = 只查 asar 内 17 个标记 |
+| `verify.mjs` | 校验。无参数 = CDP 行为验证（思考折叠）；`--delete` = CDP 查删除/多选补丁注入；`--time` = CDP 查时间/速度；`--static` = 只查 asar 内 19 个标记（renderer 16 + preload 1 + 主进程 2）|
 | `restart.mjs` | 单独重启桌面端并开 `--remote-debugging-port=<自动挑的端口>` |
 | `debug-port.mjs` | 挑调试口：避开 Windows TCP 保留区间（Hyper-V/WSL/Docker）与已占用端口 |
 | `SKILL.md` | 补丁细节、P1/P2/P4/P8 与 D1–D8 每处改什么、坑、升级后怎么重新定位锚点 |
@@ -47,7 +47,7 @@
 ```bash
 node apply-patch.mjs            # dry-run：全部锚点 OK 才继续
 node apply-patch.mjs --write    # 装（自动关→备份 app.asar.bak-<版本号>→写→开回来）
-node verify.mjs --static        # 17 个标记全绿
+node verify.mjs --static        # 19 个标记全绿
 node verify.mjs --delete        # 先切到首页；只查注入，不真删
 node verify.mjs --time          # 时间/速度补丁：首页行时间 + 会话页完成时间 + 速度启动标记
 node sample-speed.mjs           # 趁助手输出时采样实时速度（每 500ms 一次）

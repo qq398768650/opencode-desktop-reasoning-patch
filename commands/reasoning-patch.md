@@ -14,7 +14,7 @@ description: 重打桌面端补丁（思考折叠 + 首页删除按钮 + 时间/
 1. 第 0 步先拉最新：`cd ~/.config/opencode/skills/desktop-reasoning-patch && git pull --ff-only`（直连 GitHub 超时就加 `-c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897`）
 2. `node apply-patch.mjs`（dry-run，确认锚点全 OK、不动文件不动进程）
 3. `node apply-patch.mjs --write`（会自动：关掉桌面端 → 备份官方版为 `app.asar.bak-<版本号>` → 写补丁 → 带调试口开回来；会话不会断）
-4. 等约 20 秒后 `node verify.mjs --static`（期望 17 项全绿）和 `node verify.mjs`（思考折叠行为；需要先点开一个有已完成思考的会话）
+4. 等约 20 秒后 `node verify.mjs --static`（期望 19 项全绿）和 `node verify.mjs`（思考折叠行为；需要先点开一个有已完成思考的会话）；再 `node verify.mjs --time` 查时间/用量/速度（先切到历史会话）
 5. 锚点找不到或验证失败时，按技能里「升级后锚点找不到怎么办」和「坑」两节排查；改好锚点后把结论写回 `apply-patch.mjs` 与 `SKILL.md`
 
 最后用中文简短汇报：目标 chunk 与字节数变化、asar 大小变化、verify 结果。$ARGUMENTS

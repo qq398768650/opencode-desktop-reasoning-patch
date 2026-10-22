@@ -130,6 +130,8 @@ if (process.argv.includes('--static')) {
     ['时间显示 · 回复完成时间 data-oc-done-time', anyChunk('data-oc-done-time')],
     ['时间显示 · 实时速度启动标记 __ocSpeedBoot$', anyChunk('__ocSpeedBoot$')],
     ['时间显示 · 实时速度元素 data-oc-live-tps', anyChunk('data-oc-live-tps')],
+    ['时间显示 · 消息用量 data-oc-usage', anyChunk('data-oc-usage')],
+    ['时间显示 · 会话统计条 data-oc-stats', anyChunk('data-oc-stats')],
     ['时间显示 · 首页活跃时间 data-oc-home-time', anyChunk('data-oc-home-time')],
     ['文件定位 · 启动标记 __ocFileBoot$', anyChunk('__ocFileBoot$')],
     ['文件定位 · preload 暴露 revealPath', (others['/out/preload/index.cjs'] || '').includes('oc:reveal-path')],
@@ -182,6 +184,8 @@ if (process.argv.includes('--time')) {
       speedBoot: !!globalThis.__ocSpeedBoot$,
       speedEl: document.querySelectorAll('[data-oc-live-tps]').length,
       speedText: (document.querySelector('[data-oc-live-tps]') || {}).textContent || '',
+      statsText: (document.querySelector('[data-oc-stats]') || {}).innerText || '',
+      usageCount: document.querySelectorAll('[data-oc-usage]').length,
     };
   })()`);
   console.log(JSON.stringify(out, null, 2));
