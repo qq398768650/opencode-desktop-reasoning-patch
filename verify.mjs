@@ -99,17 +99,23 @@ if (process.argv.includes('--static')) {
   const dataStart = 8 + buf.readUInt32LE(4);
   const header = JSON.parse(buf.subarray(16, 16 + buf.readUInt32LE(12)).toString('utf8'));
   const chunks = [];
+  const others = {};
   (function walk(node, prefix) {
     for (const k of Object.keys(node.files)) {
       const c = node.files[k];
       if (c.files) { walk(c, prefix + '/' + k); continue; }
+      const np = prefix + '/' + k;
       if (prefix === '/out/renderer/assets' && c.size <= 4 * 1024 * 1024) {
         const off = dataStart + Number(c.offset);
         chunks.push({ name: k, text: buf.subarray(off, off + c.size).toString('utf8') });
+      } else if (np === '/out/preload/index.cjs' || np === '/out/main/index.js') {
+        const off = dataStart + Number(c.offset);
+        others[np] = buf.subarray(off, off + c.size).toString('utf8');
       }
     }
   })(header, '');
   const anyChunk = (s) => chunks.some((c) => c.text.includes(s));
+  const anyOther = (s) => Object.values(others).some((t) => t.includes(s));
   const checks = [
     ['思考折叠 · 全局状态 Map（_rx$）', anyChunk('_rx$=globalThis.__ocReasoningOpen')],
     ['思考折叠 · 收起按钮标记', anyChunk('data-reasoning-collapse')],
@@ -125,11 +131,14 @@ if (process.argv.includes('--static')) {
     ['时间显示 · 实时速度启动标记 __ocSpeedBoot$', anyChunk('__ocSpeedBoot$')],
     ['时间显示 · 实时速度元素 data-oc-live-tps', anyChunk('data-oc-live-tps')],
     ['时间显示 · 首页活跃时间 data-oc-home-time', anyChunk('data-oc-home-time')],
+    ['文件定位 · 启动标记 __ocFileBoot$', anyChunk('__ocFileBoot$')],
+    ['文件定位 · preload 暴露 revealPath', (others['/out/preload/index.cjs'] || '').includes('oc:reveal-path')],
+    ['文件定位 · 主进程 IPC oc:reveal-path', (others['/out/main/index.js'] || '').includes('oc:reveal-path')],
   ];
   console.log('asar:', asarPath, '(' + buf.length + ' 字节)');
   for (const [label, ok] of checks) console.log((ok ? '✅ ' : '❌ ') + label);
   const allOk = checks.every(([, ok]) => ok);
-  console.log(allOk ? '✅ 三组补丁标记齐全（结构静态校验通过）' : '❌ 有标记缺失：补丁没打上，或被打回了官方原版');
+  console.log(allOk ? '✅ 四组补丁标记齐全（结构静态校验通过）' : '❌ 有标记缺失：补丁没打上，或被打回了官方原版');
   process.exit(allOk ? 0 : 3);
 }
 

@@ -360,8 +360,28 @@ const T_SPEED_JS = '(function(){try{' +
   'boot();' +
 '}catch(e){}})()';
 
+// 第四组：Ctrl+左键点会话里的文件路径 → 资源管理器打开所在目录并选中文件
+const T_FILE_JS = fs.readFileSync(path.join(HERE, 'inject', 'file-reveal.js'), 'utf8').trim();
+
+// 主进程：加一个 oc:reveal-path IPC（用 shell.showItemInFolder，正好是「打开目录 + 选中文件」）
+// 不依赖打包后的压缩变量名：动态 import electron，内置模块走 process.getBuiltinModule。
+const MAIN_REVEAL_JS = ';import("electron").then(function(m){try{m.ipcMain.handle("oc:reveal-path",' +
+  'function(e,t){try{' +
+    'var o=(t&&typeof t==="object")?t:{path:t},p=o.path,root=o.dir;' +
+    'if(typeof p!=="string"||!p)return!1;' +
+    'var gm=(typeof process!=="undefined"&&typeof process.getBuiltinModule==="function")?process.getBuiltinModule.bind(process):null;' +
+    'var fs=gm?gm("node:fs"):null,pa=gm?gm("node:path"):null;' +
+    // 文件不存在时：优先在会话目录里递归找同名文件（编辑文件卡片只显示文件名）
+    'if(fs&&pa&&!fs.existsSync(p)){' +
+      'var d=(root&&fs.existsSync(root))?root:pa.dirname(p),b=pa.basename(p);' +
+      'try{var g=fs.globSync("**/"+b,{cwd:d});if(g&&g.length)p=pa.join(d,g[0])}catch(x){}' +
+    '}' +
+    'if(fs&&!fs.existsSync(p))return!1;' +
+    'm.shell.showItemInFolder(p);return!0' +
+  '}catch(x){return!1}})}catch(x){}});';
+
 const D_RULES = [
-  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 消息/会话时间 + 实时速度', ',p8=!1,m8=500;', ',p8=!0,m8=500,' + D_TRASH_ICON + ';' + D_MULTI_JS + ';' + T_TIME_JS + ';' + T_SPEED_JS + ';'],
+  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 消息/会话时间 + 实时速度 + 文件定位', ',p8=!1,m8=500;', ',p8=!0,m8=500,' + D_TRASH_ICON + ';' + D_MULTI_JS + ';' + T_TIME_JS + ';' + T_SPEED_JS + ';' + T_FILE_JS + ';'],
   ['D2 tooltip 文案 归档→删除', 'get value(){return e.language.t(`common.archive`)}', 'get value(){return e.language.t(`common.delete`)}'],
   ['D3 动作标识 home-session-archive→delete', '`home-session-archive`', '`home-session-delete`'],
   ['D4 图标 归档→垃圾桶 + 注册行→会话映射', 'get icon(){return F(hP,{name:`archive`})}', 'get icon(){return globalThis.__ocRegRow$&&globalThis.__ocRegRow$(e.server,e.record.session),globalThis.__ocDeleteApi$=e.onDeleteSession,F(ZZ_TRASH_ICON,{})}'],
@@ -533,6 +553,27 @@ for (const [label, find, repl] of D_RULES) del = replaceOnce(del, find, repl, la
   if (!txt.includes('data-oc-multi')) throw new Error('补丁自检失败：多选工具条没注入');
 }
 jobs.push({ path: delPath, content: del, label: '首页删除按钮' });
+
+// ---- 补丁 3：preload 暴露 revealPath（renderer 侧用 window.electron.revealPath 调） ----
+const PRELOAD_PATH = '/out/preload/index.cjs';
+let pre = Buffer.from(readEntry(srcParsed, PRELOAD_PATH));
+pre = replaceOnce(
+  pre,
+  ',getPathForFile:t=>e.webUtils.getPathForFile(t)});',
+  ',getPathForFile:t=>e.webUtils.getPathForFile(t),revealPath:t=>e.ipcRenderer.invoke("oc:reveal-path",t)});',
+  'F1 preload 暴露 revealPath'
+);
+if (!pre.toString('utf8').includes('oc:reveal-path')) throw new Error('补丁自检失败：preload 没接上 revealPath');
+jobs.push({ path: PRELOAD_PATH, content: pre, label: 'preload 文件定位' });
+
+// ---- 补丁 4：主进程注册 oc:reveal-path（追加到 main chunk 末尾，不依赖压缩变量名） ----
+const MAIN_PATH = '/out/main/index.js';
+let mainBuf = Buffer.from(readEntry(srcParsed, MAIN_PATH));
+const mainTxt = mainBuf.toString('utf8');
+if (!mainTxt.includes('ipcMain')) throw new Error('主进程 chunk 里没找到 ipcMain，锚点结构可能变了');
+mainBuf = Buffer.from(mainTxt + MAIN_REVEAL_JS, 'utf8');
+console.log('  F2 主进程 oc:reveal-path: OK');
+jobs.push({ path: MAIN_PATH, content: mainBuf, label: '主进程文件定位' });
 
 // ---- 重建 asar ----
 // 两个目标必须串行：每替换一个文件都会平移它之后所有文件的 offset，第二次要在上一次的结果上继续。

@@ -1,6 +1,6 @@
-# opencode 桌面端补丁（思考折叠 + 首页会话删除按钮 + 时间/速度显示）
+# opencode 桌面端补丁（思考折叠 + 首页会话删除按钮 + 时间/速度显示 + 文件定位）
 
-给 [opencode](https://opencode.ai) 桌面端（Electron）加三组官方没有的交互，脚本一次全部打上。
+给 [opencode](https://opencode.ai) 桌面端（Electron）加四组官方没有的交互，脚本一次全部打上。
 
 ## 一、思考折叠
 
@@ -15,6 +15,12 @@
 ## 三、时间与速度显示
 
 **每条助手回复末尾补上完成时间（`· 14:32`）→ 首页每个会话行右侧显示最后活跃时间（今天 `14:32`，跨天 `10/16`）→ 输入框发送按钮左侧实时显示当前输出速度（`142 tok/s`，流式时出现，结束后约 2 秒淡出）**
+
+## 四、文件定位
+
+**在会话里 `Ctrl + 左键`点文件路径 → 资源管理器打开所在目录并选中该文件**
+
+正文里的磁盘路径（`C:\a\b.ts`、`src/index.ts`、`apply-patch.mjs`，带 `:12` 行号也认）、编辑/写入文件卡片上的文件名都能点。Ctrl 按住悬停在路径上会变成手型；相对路径按当前会话的工作目录解析，目录里没有同名文件时再递归找一次。`http://` 之类的网页链接不接管。
 
 ---
 
@@ -51,7 +57,18 @@
 | 5 | 首页每个会话行右侧显示**最后活跃时间**：今天 `HH:MM`、跨天 `MM/DD`、跨年 `YYYY/MM/DD`；悬停时排在项目名和垃圾桶之间，不重叠 |
 | 6 | 时间数据从后端 `/api/session/<sid>/message` 的 `time.completed` 和 `session.time.updated` 取；速度走页面内 SSE，不轮询接口、不改数据结构、不额外存盘 |
 
-官方 2.0.x 只有「默认展开」和「默认折叠」两种静态行为，没有上面第一套；首页也只有一个「归档」入口，没有删除按钮；消息末尾只有「模型 · 耗时」，没有绝对时间；输入框也没有任何速度显示。
+官方 2.0.x 只有「默认展开」和「默认折叠」两种静态行为，没有上面第一套；首页也只有一个「归档」入口，没有删除按钮；消息末尾只有「模型 · 耗时」，没有绝对时间；输入框也没有任何速度显示；点路径只会选中文本，不会打开目录。
+
+### 文件定位
+
+| # | 行为 |
+|---|---|
+| 1 | 会话正文里出现文件路径时，**Ctrl+左键点击** → 资源管理器打开所在目录并选中该文件 |
+| 2 | 认这些写法：`C:\a\b.ts`、`\\server\share\x`、`src/index.ts`、`apply-patch.mjs`，带 `:12` / `:12:3` 行号也能剥掉 |
+| 3 | 编辑/写入文件卡片上的文件名也能点（只显示文件名时，主进程会在会话目录里递归找同名文件） |
+| 4 | Ctrl 按住悬停在路径上，光标变手型；点中的链接不会被浏览器/应用拦走（`preventDefault`） |
+| 5 | `http://` 之类的网页链接不接管，照旧是链接 |
+| 6 | 实现：preload 暴露 `revealPath` → 主进程 `ipcMain.handle("oc:reveal-path")` → `shell.showItemInFolder`；不改官方任何逻辑 |
 
 ---
 
@@ -63,7 +80,7 @@
 
 支持版本：**2.1.2**（2.1.1 / 2.0.32 / 2.0.29 的锚点写法不同，见文末版本对照表）。opencode 升级后 minified 代码会变，锚点失效时脚本会明确报错，需要按下面「升级后锚点找不到」更新。
 
-三组补丁是**同一次运行里全部打上**的：任一目标的锚点对不上，脚本会报错并**不写文件**（不会出现只打一半的情况）。
+四组补丁是**同一次运行里全部打上**的：任一目标的锚点对不上，脚本会报错并**不写文件**（不会出现只打一半的情况）。
 
 ### 斜杠命令 `/reasoning-patch`（`--write` 时自动安装）
 
@@ -90,7 +107,7 @@ node apply-patch.mjs --write
 # 3. 验证：历史思考块默认折叠，点一下能开、再点能收
 node verify.mjs
 
-# 3b. 不想开调试口时，可以先做静态校验（直接查 asar 里三组补丁的 14 个标记）
+# 3b. 不想开调试口时，可以先做静态校验（直接查 asar 里四组补丁的 17 个标记）
 node verify.mjs --static
 
 # 3c. 只查删除/多选补丁有没有注入（要先切到首页；只查存在性，不会真删）
@@ -122,7 +139,8 @@ node apply-patch.mjs --out patched.asar
 
 | 文件 | 作用 |
 |---|---|
-| `apply-patch.mjs` | 主脚本：找安装目录 → 定位两个 renderer chunk → 打三组补丁 → 重建 asar（含 dry-run / `--out` / `--write`） |
+| `apply-patch.mjs` | 主脚本：找安装目录 → 定位两个 renderer chunk（+ preload、主进程）→ 打四组补丁 → 重建 asar（含 dry-run / `--out` / `--write`） |
+| `inject/file-reveal.js` | 文件定位补丁的 renderer 注入源码（`apply-patch.mjs` 读进来内联，不单独部署） |
 | `restart.mjs` | 关掉再带 `--remote-debugging-port=<自动挑的端口>` 重开桌面端 |
 | `debug-port.mjs` | 挑调试口：读 Windows 的 TCP 保留端口区间 + `netstat` 占用，从 9222 往后找第一个可用的（`--port` / `OC_DEBUG_PORT` 可覆盖） |
 | `verify.mjs` | 走 CDP 检查折叠行为（`--delete` 查删除/多选补丁，`--time` 查时间补丁，`--static` 只查 asar 标记），PASS 时退出码 0 |
@@ -152,7 +170,7 @@ node apply-patch.mjs --out patched.asar
 
 | 标记 | 改什么 |
 |---|---|
-| **D1** | 把开关 `,p8=!1,m8=500;` 改成 `,p8=!0,m8=500,` + 内联 16×16 垃圾桶图标组件（`ZZ_TRASH_ICON`）；多选删除 UI 的 IIFE（`D_MULTI_JS`）、时间 IIFE（`T_TIME_JS`）、实时速度 IIFE（`T_SPEED_JS`）接在声明**结尾 `;` 之后**当独立语句（不能塞进那个逗号列表，见「已知坑」） |
+| **D1** | 把开关 `,p8=!1,m8=500;` 改成 `,p8=!0,m8=500,` + 内联 16×16 垃圾桶图标组件（`ZZ_TRASH_ICON`）；多选删除 UI 的 IIFE（`D_MULTI_JS`）、时间 IIFE（`T_TIME_JS`）、实时速度 IIFE（`T_SPEED_JS`）、文件定位 IIFE（`T_FILE_JS`）接在声明**结尾 `;` 之后**当独立语句（不能塞进那个逗号列表，见「已知坑」） |
 | **D2** | 按钮文案 `common.archive` → `common.delete`（"归档"→"删除"） |
 | **D3** | 按钮 `data-action` `home-session-archive` → `home-session-delete` |
 | **D4** | 图标 `archive` → 垃圾桶；顺手注册行→会话映射（`__ocRegRow$`）、把官方 `onDeleteSession` 存进 `__ocDeleteApi$` |
@@ -176,6 +194,18 @@ node apply-patch.mjs --out patched.asar
 | **T7 重绘** | `MutationObserver` 盯 `document.body`（120ms 节流）+ 首页 15s 定时兜底（`time.updated` 变化不必然触发 DOM 变更）；SSE delta 到达时立即重绘 |
 
 两个目标 chunk 必须**串行**重建：每替换一个文件都会平移它之后所有文件的 offset，第二个要在第一个的结果上继续。
+
+### 文件定位（Ctrl+左键点路径 → 资源管理器选中文件）
+
+renderer 没有打开目录的能力（`window.electron` 只有 `windowID / bootstrap / storageSnapshot / extensions / getPathForFile`），所以要三层配合：
+
+| 标记 | 改什么 |
+|---|---|
+| **F1 preload** | `/out/preload/index.cjs` 的 `exposeInMainWorld('electron', {…})` 里加 `revealPath: t => e.ipcRenderer.invoke("oc:reveal-path", t)`。preload 跑在沙箱里（`sandbox:!0`），拿不到 `shell` |
+| **F2 主进程** | `/out/main/index.js` 末尾追加 `import("electron").then(m => m.ipcMain.handle("oc:reveal-path", (e, t) => …))`：`t` 可以是字符串或 `{path, dir}`；文件不存在时用 `fs.globSync("**/"+basename, {cwd: dir || dirname(path)})` 找同名文件，还找不到返回 `false`；找到就 `shell.showItemInFolder(p)`（打开目录 + 选中）。用 `process.getBuiltinModule("node:fs")` 自取内置模块，不引用压缩后的单字母变量，升级不易失效 |
+| **F3 renderer** | `inject/file-reveal.js`（`T_FILE_JS`，跟着 D1 注入）。`mousemove`（capture）在 Ctrl 按住且指到路径上时给 `cursor:pointer`；`click`（capture）在 `ctrlKey && button===0` 时按优先级取路径：①`[data-slot="apply-patch-filename"]` ②`caretRangeFromPoint` + 正则取点击位置那个 token ③整块 `<code>` 文本；再 `absPath()`（去行号、认盘符/UNC/Unix、相对路径拼会话目录）后调 `revealPath({path, dir})` |
+
+会话目录来自 `ensureDir()`：先查 `__ocRowMap$`，没有再页面内 `fetch(/api/session/<sid>)` 取 `location.directory`（sid 从 `localStorage` 的 `last-active-url` 抠）。
 
 ---
 
@@ -204,6 +234,11 @@ node apply-patch.mjs --out patched.asar
 - **token/字符 比要「先过滤再聚合」**：中位数会被纯工具调用消息带偏（比值到 5.96，中位数 0.794）；纯聚合比也会被少数异常拉高（0.732 vs 真实 0.62）。正确做法是 `c>=200` 且 `0.25<n/c<1.2` 过滤后取 `sum(n)/sum(c)`。
 - **速度窗口下限别给 500ms**：刚开口第一秒窗口没填满，500ms 当分母等于乘二（实测 296 tok/s），下限至少 1000ms。
 - **SSE 断了不会自动重连**：`connect()` 的 `catch` 只吞错误；用久了速度不显示就是这个原因，要修就加重连退避。
+- **preload 是 `/out/preload/index.cjs` 不是 `.js`**：只扫 `/out/renderer/assets` 查不到文件定位的标记，`--static` 要单独读 preload 和 `/out/main/index.js`。
+- **`window.electron` 是 contextBridge 的 frozen 对象**，没法 monkey-patch `revealPath` 记录调用。验证「真弹资源管理器」要读窗口选中项：`(New-Object -ComObject Shell.Application).Windows() | % { $_.Document.SelectedItems() }`；`showItemInFolder` 对已打开的窗口是复用+改选中，**不新增窗口**，别拿窗口数量判断。
+- **主进程补丁只能追加到 `/out/main/index.js` 末尾当独立语句**（ESM，变量名全是压缩后的单字母），用 `import("electron")` + `process.getBuiltinModule(...)` 自取，别引用现有标识符。
+- **`fs.globSync` 要 Node 22+**；「只给文件名」的兜底必须用**会话工作目录**当 `cwd`，所以 renderer 传的是 `{path, dir}` 而不是单个字符串。
+- **别用 `^https?://` 判断网页链接**：正则从 `http://x` 里抠出来的 token 是 `p://x`，前缀判断会漏，要用 `indexOf("://") >= 0`。
 
 ## 升级后锚点找不到
 
@@ -221,7 +256,7 @@ opencode 升级后 minified 代码会变，脚本会报「锚点没找到」。�
 | 2.0.30 | `/out/renderer/assets/route-CPNDqx0F.js`（355075 → 356889 B） | `/out/renderer/assets/main-CfL8Gr4d.js`（1321365 → 1321786 B） | 176341661 → 176343896 |
 | 2.0.32 | `/out/renderer/assets/route-BYzALZ62.js`（357215 → 360467 B） | `/out/renderer/assets/main-CZyBNj5O.js`（官方 1321667 → 1330501 B，含多选删除 + 时间） | 176346919 → 176359005 |
 | 2.1.1 | `/out/renderer/assets/route-B8ouoQvI.js`（357032 → 360284 B） | `/out/renderer/assets/main-ptWBkiKT.js`（官方 1311929 → 1320763 B） | 176355995 → 176368081 |
-| 2.1.2 | `/out/renderer/assets/route-BKcp3psp.js`（359447 → 362699 B） | `/out/renderer/assets/main-CRF7GP33.js`（官方 1312199 → 1324000 B，含时间 + 实时速度） | 176359724 → 176374777 |
+| 2.1.2 | `/out/renderer/assets/route-BKcp3psp.js`（359447 → 362699 B） | `/out/renderer/assets/main-CRF7GP33.js`（官方 1312199 → 1329556 B，含时间 + 实时速度 + 文件定位）；preload 838 → 893 B；main 819112 → 819775 B | 176359724 → 176381051 |
 
 ---
 
