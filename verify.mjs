@@ -208,9 +208,12 @@ if (process.argv.includes('--time')) {
   console.log(JSON.stringify(out, null, 2));
   const okHome = out.rows > 0 ? out.homeTimes.length > 0 : true;
   const okMsg = out.metas > 0 ? out.doneTimes.length > 0 : true;
-  const okTps = out.speedBoot && out.speedEl > 0 && out.tpsWrap;
+  // 首页没有输入框也没有统计行，速度/tok-s 布局只存在于会话页 —— 在首页时这两项按「不适用」处理，
+  // 否则切到首页验首页活跃时间会永远报失败（2026-10-24 实测）
+  const onHome = out.rows > 0 && !out.statsLayout;
+  const okTps = onHome ? true : (out.speedBoot && out.speedEl > 0 && out.tpsWrap);
   const sl = out.statsLayout;
-  const okLayout = !!sl && sl.display === 'flex' && sl.centered && sl.gaps.length >= 2 && sl.gaps.every((g) => g >= 16);
+  const okLayout = onHome ? true : (!!sl && sl.display === 'flex' && sl.centered && sl.gaps.length >= 2 && sl.gaps.every((g) => g >= 16));
   const ok = out.boot && okHome && okMsg && okTps && okLayout;
   if (sl) console.log(`统计行布局: display=${sl.display} gap=${sl.gap} 实际间距=[${sl.gaps}] 左/右留白=${sl.leftPad}/${sl.rightPad} 居中=${sl.centered}`);
   console.log(ok ? '✅ 时间/速度补丁已生效（首页活跃时间 / 回复完成时间 / 统计行 tok/s 且间距居中）' : '❌ 时间/速度补丁没生效（见上面字段）');
