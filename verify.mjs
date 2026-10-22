@@ -137,6 +137,7 @@ if (process.argv.includes('--static')) {
     ['时间显示 · 消息用量 data-oc-usage', anyChunk('data-oc-usage')],
     ['时间显示 · 会话统计条 data-oc-stats', anyChunk('data-oc-stats')],
     ['时间显示 · 首页活跃时间 data-oc-home-time', anyChunk('data-oc-home-time')],
+    ['时间显示 · 上下文上限按 model id 缓存 __ocCtxLimits$', anyChunk('__ocCtxLimits$')],
     ['文件定位 · 启动标记 __ocFileBoot$', anyChunk('__ocFileBoot$')],
     ['文件定位 · preload 暴露 revealPath', (others['/out/preload/index.cjs'] || '').includes('oc:reveal-path')],
     ['文件定位 · 主进程 IPC oc:reveal-path', (others['/out/main/index.js'] || '').includes('oc:reveal-path')],
@@ -203,6 +204,11 @@ if (process.argv.includes('--time')) {
         return { display: cs.display, gap: cs.gap, gaps, leftPad: left, rightPad: right, centered: Math.abs(left - right) <= 2 };
       })(),
       usageCount: document.querySelectorAll('[data-oc-usage]').length,
+      ctxLimits: globalThis.__ocCtxLimits$ ? Object.entries(globalThis.__ocCtxLimits$).slice(-6) : null,
+      ctxNow: (() => {
+        const el = document.querySelector('[data-oc-stat="ctx"]');
+        return el ? el.textContent.trim() : '';
+      })(),
     };
   })()`);
   console.log(JSON.stringify(out, null, 2));

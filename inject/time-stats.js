@@ -148,19 +148,55 @@
       }).catch(function () { }).then(function () { BUSY['s:' + sid] = 0; });
     };
 
+    // 上下文上限按 model id 缓存。旧实现是单值 __ocCtxLimit$，一旦被第一个模型写进去就再也不更新：
+    // 先打开过 200K 的会话，之后切到 1M 模型，面板仍然按 200K 算（50% 而不是 10%）。
+    var limStore = function () {
+      var g = globalThis.__ocCtxLimits$;
+      if (!g) g = globalThis.__ocCtxLimits$ = Object.create(null);
+      return g;
+    };
+    var limTried = function () {
+      var g = globalThis.__ocCtxTried$;
+      if (!g) g = globalThis.__ocCtxTried$ = Object.create(null);
+      return g;
+    };
+    var limOf = function (mid) {
+      if (!mid) return 0;
+      var v = limStore()[mid];
+      return v > 0 ? v : 0;
+    };
+    // 最新一条带 model 的消息最准：会话中途换模型时 /api/session 的 model 不一定立刻刷新
+    var MIDC = { k: '', v: '' };
+    var curMid = function () {
+      var sm = (ST.model && ST.model.id) || '';
+      var k = M.size + '|' + sm;
+      if (MIDC.k === k) return MIDC.v;
+      var last = '', it = M.values(), x;
+      while (!(x = it.next()).done) { var v = x.value; if (v && v.m) last = v.m; }
+      MIDC.k = k; MIDC.v = last || sm;
+      return MIDC.v;
+    };
+
     var loadModel = function (mid) {
-      if (!mid || globalThis.__ocCtxLimit$ || BUSY['m:' + mid]) return;
+      if (!mid) return;
+      var g = limStore();
+      if (g[mid] > 0) return;
+      var T = limTried(), now = Date.now();
+      if (T[mid] && now - T[mid] < 60000) return;  // 查不到就冷却一分钟，别每帧重发
       var b = apiBase(); if (!b) return;
-      BUSY['m:' + mid] = 1;
+      T[mid] = now;
       fetch(b + '/api/model').then(function (r) { return r.json(); }).then(function (j) {
         var a = (j && (j.data || j)) || [];
         for (var i = 0; i < a.length; i++) {
           if (a[i] && a[i].id === mid && a[i].limit && a[i].limit.context) {
-            globalThis.__ocCtxLimit$ = a[i].limit.context;
+            g[mid] = a[i].limit.context;
+            globalThis.__ocCtxLimit$ = a[i].limit.context;  // 兼容旧值 / 人工排查
+            delete T[mid];
+            try { paintStats(); } catch (e) { }
             break;
           }
         }
-      }).catch(function () { }).then(function () { BUSY['m:' + mid] = 0; });
+      }).catch(function () { });
     };
 
     var want = function (mid) {
@@ -331,8 +367,9 @@
       if (usage.textContent !== ut) usage.textContent = ut;
       usage.style.display = ut ? '' : 'none';
 
-      var lim = globalThis.__ocCtxLimit$ || 0;
-      if (!lim && ST.model && ST.model.id) loadModel(ST.model.id);
+      var mid = curMid();
+      var lim = limOf(mid);
+      if (!lim) loadModel(mid);
       var pct = lim > 0 && ST.ctx > 0 ? Math.min(100, Math.round((ST.ctx / lim) * 100)) : null;
       var ctx = el.querySelector('[data-oc-stat="ctx"]');
       if (pct === null) {
@@ -549,7 +586,9 @@
           openPanel(st, '', su.html,
             '<div style="display:flex;justify-content:space-between;gap:24px;margin-bottom:4px"><span style="font-weight:600">Token 用量</span><span style="font-variant-numeric:tabular-nums;font-weight:600">' + su.total.toLocaleString() + ' tok</span></div>');
         } else if (kind === 'ctx') {
-          var lim = globalThis.__ocCtxLimit$ || 0;
+          var mid = curMid();
+          var lim = limOf(mid);
+          if (!lim) loadModel(mid);
           var ctx = ST.ctx || 0;
           var pct = lim > 0 ? Math.min(100, Math.round((ctx / lim) * 1000) / 10) : 0;
           var bar = '<div style="height:6px;border-radius:3px;background:rgba(128,128,128,.25);margin:6px 0 8px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:#3b82f6;border-radius:3px"></div></div>';
