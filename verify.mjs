@@ -184,16 +184,32 @@ if (process.argv.includes('--time')) {
       speedBoot: !!globalThis.__ocSpeedBoot$,
       speedEl: document.querySelectorAll('[data-oc-live-tps]').length,
       speedText: (document.querySelector('[data-oc-live-tps]') || {}).textContent || '',
+      tpsWrap: !!document.querySelector('[data-oc-tps-wrap]'),
+      tpsTitle: (document.querySelector('[data-oc-tps-wrap]') || {}).title || '',
       statsText: (document.querySelector('[data-oc-stats]') || {}).innerText || '',
+      statsLayout: (() => {
+        const el = document.querySelector('[data-oc-stats]');
+        if (!el) return null;
+        const cs = getComputedStyle(el);
+        const r = el.getBoundingClientRect();
+        const kids = [...el.querySelectorAll('[data-oc-stat]')].map(k => k.getBoundingClientRect()).filter(b => b.width > 0);
+        const gaps = kids.slice(1).map((b, i) => Math.round(b.x - kids[i].right));
+        const left = kids.length ? Math.round(kids[0].x - r.x) : 0;
+        const right = kids.length ? Math.round(r.right - kids[kids.length - 1].right) : 0;
+        return { display: cs.display, gap: cs.gap, gaps, leftPad: left, rightPad: right, centered: Math.abs(left - right) <= 2 };
+      })(),
       usageCount: document.querySelectorAll('[data-oc-usage]').length,
     };
   })()`);
   console.log(JSON.stringify(out, null, 2));
   const okHome = out.rows > 0 ? out.homeTimes.length > 0 : true;
   const okMsg = out.metas > 0 ? out.doneTimes.length > 0 : true;
-  const okTps = out.speedBoot && out.speedEl > 0;
-  const ok = out.boot && okHome && okMsg && okTps;
-  console.log(ok ? '✅ 时间/速度补丁已生效（首页活跃时间 / 回复完成时间 / 发送按钮旁实时速度）' : '❌ 时间/速度补丁没生效（见上面字段）');
+  const okTps = out.speedBoot && out.speedEl > 0 && out.tpsWrap;
+  const sl = out.statsLayout;
+  const okLayout = !!sl && sl.display === 'flex' && sl.centered && sl.gaps.length >= 2 && sl.gaps.every((g) => g >= 16);
+  const ok = out.boot && okHome && okMsg && okTps && okLayout;
+  if (sl) console.log(`统计行布局: display=${sl.display} gap=${sl.gap} 实际间距=[${sl.gaps}] 左/右留白=${sl.leftPad}/${sl.rightPad} 居中=${sl.centered}`);
+  console.log(ok ? '✅ 时间/速度补丁已生效（首页活跃时间 / 回复完成时间 / 统计行 tok/s 且间距居中）' : '❌ 时间/速度补丁没生效（见上面字段）');
   process.exit(ok ? 0 : 3);
 }
 

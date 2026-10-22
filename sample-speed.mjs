@@ -1,4 +1,4 @@
-// 采样发送按钮旁的速度文字
+// 采样统计行里的 tok/s 数字
 const PORTS = Array.from({ length: 179 }, (_, i) => 9222 + i);
 async function findPage() {
   for (const port of PORTS) {

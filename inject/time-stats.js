@@ -3,8 +3,11 @@
  * 1) 每条助手回复的 meta 行右侧：`用量 4.1M tok   10月15日 18:45`
  *    - 用量可点开，弹出本轮明细（模型 / 缓存命中 / 各类 token）
  *    - 时间格式跟 dsh 一致：今天 `HH:MM`，同年 `M月D日 HH:MM`，跨年带年份
- * 2) 输入框下方一行会话统计：`10 轮 97 步 · 235 tok/s` / `18.5M tok · 缓存命中 95%` / `38%`
- * 3) 发送按钮左侧：流式时实时 tok/s（会话统计里的 tok/s 是整段平均值）
+ * 2) 输入框下方一行会话统计（居中）：`⟳ 10 轮 97 步 · 235 tok/s` / `▤ 18.5M tok · 缓存命中 95%` / `(圆环) 38%`
+ * 3) tok/s 只有这一个位置（不再挂在发送按钮旁）：流式中显示 2.5s 滑窗实时值，
+ *    流式结束后落回平均速度 Σoutput / Σ(completed - created)，分母只算有正文的模型步
+ *    （opencode 的 message.time 没有「首 token」时间戳，streamed 是最后一次流式更新，
+ *     所以拿不到 dsh 那种纯 decode 时间，只能整步墙钟近似）
  *
  * 数据全部来自页面内 fetch（Node 直连后端 401，只有页面带认证）。
  */
@@ -77,7 +80,7 @@
       BUSY[sid] = 1;
       fetch(b + '/api/session/' + sid + '/message').then(function (r) { return r.json(); }).then(function (j) {
         var a = Array.isArray(j) ? j : ((j && (j.data || j.messages)) || []);
-        var turns = 0, steps = 0, oTok = 0, decMs = 0, lastCtx = 0, sttMs = 0, firstAt = 0, lastAt = 0;
+        var turns = 0, steps = 0, oTok = 0, decMs = 0, llmMs = 0, lastCtx = 0, firstAt = 0, lastAt = 0;
         for (var i = 0; i < a.length; i++) {
           var m = a[i];
           if (!m || !m.id || !m.time) continue;
@@ -104,8 +107,12 @@
               lastCtx = (tk.input || 0) + (ca.read || 0) + (ca.write || 0) + (tk.output || 0);
               if (ch >= 50) oTok += (tk.output || 0) + (tk.reasoning || 0);
             }
-            if (ch >= 50 && m.time.completed && m.time.created) decMs += Math.max(0, m.time.completed - m.time.created);
-            if (m.time.streamed && m.time.created) sttMs += Math.max(0, m.time.streamed - m.time.created);
+            if (ch >= 50 && m.time.completed && m.time.created) {
+              // 只把「有正文的模型步」计入：纯工具步骤会把分母撑大、速度凭空掉一半
+              var stepMs = Math.max(0, m.time.completed - m.time.created);
+              llmMs += stepMs;
+              decMs += stepMs;
+            }
           }
         }
         ST.sid = sid;
@@ -113,8 +120,8 @@
         ST.steps = steps;
         ST.oTok = oTok;
         ST.decMs = decMs;
+        ST.llmMs = llmMs;
         ST.ctx = lastCtx;
-        ST.sttMs = sttMs;
         ST.spanMs = firstAt && lastAt && lastAt > firstAt ? lastAt - firstAt : 0;
         ST.lastAt = lastAt;
         loadSess(sid, function () { paintAll(); });
@@ -256,24 +263,47 @@
     };
 
     // ---------- 输入框下方：会话统计 ----------
+    var ensureStatsCss = function () {
+      if (document.getElementById('oc-stats-css')) return;
+      var tag = document.createElement('style');
+      tag.id = 'oc-stats-css';
+      // 每块自带内边距 + hover 底色，视觉上才是一列一列分开的（对齐 dsh 的 pill）
+      tag.textContent = '[data-oc-stat]{padding:2px 9px;border-radius:999px;transition:background-color .12s ease}' +
+        '[data-oc-stat]:hover{background:rgba(128,128,128,.14)}';
+      document.head.appendChild(tag);
+    };
+
     var statsEl = null;
     var ensureStats = function () {
+      ensureStatsCss();
       var form = document.querySelector('[data-component="composer"]');
       if (!form) return null;
       var host = form.parentElement;
       if (!host) return null;
-      if (statsEl && statsEl.parentElement === host) return statsEl;
-      statsEl = host.querySelector('[data-oc-stats]');
-      if (!statsEl) {
-        statsEl = document.createElement('div');
-        statsEl.setAttribute('data-oc-stats', '1');
-        statsEl.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:16px;padding:8px 4px 0;font-size:11px;line-height:1;color:var(--text-weak);opacity:.8;font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:auto;user-select:none';
-        statsEl.innerHTML =
-          '<span data-oc-stat="rounds" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"></span>' +
-          '<span data-oc-stat="usage" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"></span>' +
-          '<span data-oc-stat="ctx" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"></span>';
-        host.insertBefore(statsEl, form.nextSibling);
+      var reuse = statsEl && statsEl.parentElement === host && statsEl.querySelector('[data-oc-tps-wrap]');
+      if (!reuse) {
+        statsEl = host.querySelector('[data-oc-stats]');
+        // 旧版结构（tok/s 单独挂在发送按钮旁）没有 tps 容器，直接重建
+        if (statsEl && !statsEl.querySelector('[data-oc-tps-wrap]')) {
+          statsEl.parentNode.removeChild(statsEl);
+          statsEl = null;
+        }
+        if (!statsEl) {
+          statsEl = document.createElement('div');
+          statsEl.setAttribute('data-oc-stats', '1');
+          statsEl.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:24px;padding:8px 4px 0;font-size:11px;line-height:1;color:var(--text-weak);opacity:.8;font-variant-numeric:tabular-nums;white-space:nowrap;pointer-events:auto;user-select:none';
+          statsEl.innerHTML =
+            '<span data-oc-stat="rounds" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer">' +
+              '<span data-oc-rounds-text></span>' +
+              '<span data-oc-tps-wrap style="display:none">·&nbsp;<span data-oc-live-tps></span> tok/s</span>' +
+            '</span>' +
+            '<span data-oc-stat="usage" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"></span>' +
+            '<span data-oc-stat="ctx" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"></span>';
+          host.insertBefore(statsEl, form.nextSibling);
+        }
       }
+      // cssText 里的 display:flex 会被丢掉（实测 computed 变 block、gap 形同虚设，三块挤成一坨、也不居中），单独用 important 压住
+      statsEl.style.setProperty('display', 'flex', 'important');
       return statsEl;
     };
 
@@ -283,10 +313,9 @@
       if (!ST.steps && !ST.turns) { el.style.display = 'none'; return; }
       el.style.display = '';
 
-      var tps = ST.decMs > 0 ? Math.round(ST.oTok / (ST.decMs / 1000)) : 0;
-      var rounds = el.querySelector('[data-oc-stat="rounds"]');
-      var rt = '⟳ ' + (ST.turns || 0) + ' 轮 ' + (ST.steps || 0) + ' 步' + (tps ? ' · ' + tps + ' tok/s' : '');
-      if (rounds.textContent !== rt) rounds.textContent = rt;
+      var rounds = el.querySelector('[data-oc-rounds-text]');
+      var rt = '⟳ ' + (ST.turns ? ST.turns + ' 轮 ' : '') + (ST.steps || 0) + ' 步';
+      if (rounds && rounds.textContent !== rt) rounds.textContent = rt;
 
       var sess = ST.sess || {};
       var ca = sess.cache || {};
@@ -304,12 +333,29 @@
       if (!lim && ST.model && ST.model.id) loadModel(ST.model.id);
       var pct = lim > 0 && ST.ctx > 0 ? Math.min(100, Math.round((ST.ctx / lim) * 100)) : null;
       var ctx = el.querySelector('[data-oc-stat="ctx"]');
-      var ct = pct === null ? '' : '◑ ' + pct + '%';
-      if (ctx.textContent !== ct) ctx.textContent = ct;
-      ctx.style.display = ct ? '' : 'none';
+      if (pct === null) {
+        if (ctx.style.display !== 'none') ctx.style.display = 'none';
+      } else {
+        // 别用 ''：清空后会退回 span 默认的 inline，里面的 block 圆环会把文字挤到下一行
+        if (ctx.style.display === 'none') ctx.style.display = 'inline-flex';
+        var ring = ctx.querySelector('[data-oc-ring]');
+        if (!ring) {
+          // 圆环：conic-gradient 按百分比填充 + radial mask 挖空中心（Chromium 里两者都吃 currentColor）
+          ctx.innerHTML = '<span data-oc-ring></span><span data-oc-ctx-text></span>';
+          ring = ctx.querySelector('[data-oc-ring]');
+          ring.style.cssText = 'display:block;flex:0 0 auto;width:10px;height:10px;border-radius:50%;' +
+            'background:conic-gradient(currentColor calc(var(--p) * 1%), color-mix(in srgb, currentColor 22%, transparent) 0)';
+          ring.style.setProperty('-webkit-mask', 'radial-gradient(farthest-side, transparent calc(100% - 3px), #000 calc(100% - 2.5px))');
+        }
+        ring.style.setProperty('--p', String(pct));
+        var tx = ctx.querySelector('[data-oc-ctx-text]');
+        var ct = pct + '%';
+        if (tx.textContent !== ct) tx.textContent = ct;
+      }
+      paintSpeed();
     };
 
-    // ---------- 发送按钮旁：实时 tok/s ----------
+    // ---------- 统计行内：tok/s（流式中实时，结束后 dsh 口径平均） ----------
     var K = 0.6, WIN = 2500, IDLE = 2000;
     var D = [];
 
@@ -329,23 +375,22 @@
       return tk / ch;
     };
 
-    var speedHost = function () { return document.querySelector('[data-slot=composer-actions]'); };
+    // 平均速度：Σoutput / Σ(completed - created)，分母只含 l>=50 字符的模型步
+    var avgTps = function () {
+      return ST.decMs > 0 ? Math.round(ST.oTok / (ST.decMs / 1000)) : 0;
+    };
+
     var ensureSpeed = function () {
-      var ca = speedHost();
-      if (!ca) return null;
-      var s = ca.querySelector('[data-oc-live-tps]');
-      if (!s) {
-        s = document.createElement('span');
-        s.setAttribute('data-oc-live-tps', '1');
-        s.style.cssText = 'font-size:11px;line-height:1;opacity:.5;margin-right:8px;font-variant-numeric:tabular-nums;white-space:nowrap';
-        ca.insertBefore(s, ca.firstChild);
-      }
-      return s;
+      var el = ensureStats();
+      return el ? el.querySelector('[data-oc-live-tps]') : null;
     };
 
     var paintSpeed = function () {
       var s = ensureSpeed();
-      if (!s) return;
+      var st = statsEl;
+      if (!s || !st) return;
+      var wrap = st.querySelector('[data-oc-tps-wrap]');
+      if (!wrap) return;
       var now = performance.now(), cut = now - WIN, i, sum = 0, oldest = now, last = 0;
       for (i = D.length - 1; i >= 0; i--) {
         var r = D[i];
@@ -355,17 +400,20 @@
         if (r.t > last) last = r.t;
       }
       while (D.length && D[0].t < now - 8000) D.shift();
-      if (!sum || now - last > IDLE) {
-        if (s.textContent) s.textContent = '';
-        s.style.display = 'none';
-        return;
+      var live = !!sum && now - last <= IDLE;
+      var val = 0;
+      if (live) {
+        var span = Math.min(WIN, now - oldest);
+        if (span < 1000) span = 1000;
+        val = Math.round(sum / span * 1000 * kAdj());
+      } else {
+        val = avgTps();
       }
-      var span = Math.min(WIN, now - oldest);
-      if (span < 1000) span = 1000;
-      var raw = sum / span * 1000 * kAdj();
-      s.style.display = '';
-      var txt = Math.round(raw) + ' tok/s';
+      if (!val) { wrap.style.display = 'none'; return; }
+      wrap.style.display = '';
+      var txt = String(val);
       if (s.textContent !== txt) s.textContent = txt;
+      wrap.setAttribute('title', live ? '实时输出速度（2.5 秒滑窗）' : '会话平均输出速度（Σ输出 / Σ有正文步骤耗时）');
     };
 
     var connect = function () {
@@ -478,13 +526,14 @@
         if (panel) { closePanel(); return; }
         var kind = st.getAttribute('data-oc-stat');
         if (kind === 'rounds') {
-          var tps = ST.decMs > 0 ? Math.round(ST.oTok / (ST.decMs / 1000)) : 0;
-          var ttft = ST.steps > 0 ? Math.round(ST.sttMs / ST.steps) : 0;
-          var toolMs = ST.spanMs > ST.decMs ? ST.spanMs - ST.decMs : 0;
+          var tps = avgTps();
+          var llmMs = ST.llmMs || ST.decMs;
+          var stepMs = ST.steps > 0 ? Math.round(llmMs / ST.steps) : 0;
+          var toolMs = ST.spanMs > llmMs ? ST.spanMs - llmMs : 0;
           openPanel(st, '会话统计',
-            rowHtml('模型用时', fmtDur(ST.decMs)) +
+            rowHtml('模型用时', fmtDur(llmMs)) +
             rowHtml('工具调用用时', fmtDur(toolMs)) +
-            rowHtml('首 token 平均（TTFT）', ttft ? (Math.round(ttft / 100) / 10) + '秒' : '—') +
+            rowHtml('单步平均耗时', stepMs ? (Math.round(stepMs / 100) / 10) + '秒' : '—') +
             rowHtml('输出速度（TPS）', tps ? tps + ' tok/s' : '—'));
         } else if (kind === 'usage') {
           var sess = ST.sess || {};
