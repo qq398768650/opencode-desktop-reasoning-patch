@@ -18,16 +18,20 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function page() {
   const ports = ASKED ? [ASKED] : Array.from({ length: 179 }, (_, i) => String(9222 + i));
   for (let i = 0; i < 40; i++) {
-    for (const port of ports) {
+    // 并发探测：9222/9223 这类端口可能被 Windows 保留区间或残留监听占住，TCP 能握手但永远不回 HTTP，
+    // 串行 + 无超时的 fetch 会把整个 verify 卡死（实测 curl 也要 2s 才判定无响应）
+    const groups = await Promise.all(ports.map(async (port) => {
       try {
-        const list = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
-        // 同一调试口下可能还有别的 Electron 页面（比如本地服务管理器 http://127.0.0.1:7900），必须挑 OpenCode 自己的 oc:// 页面
-        const p = list.find((t) => t.type === 'page' && /^oc:\/\//.test(t.url)) || list.find((t) => t.type === 'page');
-        if (p) {
-          if (!ASKED) console.log('调试口:', port);
-          return p;
-        }
-      } catch { /* 还没起来 */ }
+        const list = await (await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(900) })).json();
+        return list.map((t) => ({ port, t }));
+      } catch { /* 还没起来 / 端口假活 */ return []; }
+    }));
+    const all = groups.flat();
+    // 同一调试口下可能还有别的 Electron 页面（比如本地服务管理器 http://127.0.0.1:7900），必须挑 OpenCode 自己的 oc:// 页面
+    const hit = all.find(({ t }) => t.type === 'page' && /^oc:\/\//.test(t.url)) || all.find(({ t }) => t.type === 'page');
+    if (hit) {
+      if (!ASKED) console.log('调试口:', hit.port);
+      return hit.t;
     }
     await sleep(1000);
   }

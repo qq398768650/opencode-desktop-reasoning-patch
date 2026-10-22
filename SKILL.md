@@ -25,7 +25,7 @@ opencode 桌面端的界面打包在 `<安装目录>\resources\app.asar` 里，�
 8. 每条助手回复的操作按钮行右侧显示本轮用量和完成时间（2026-10-19 新增，2026-10-23 参照 dsh 改造）：`用量 33.2K tok   10月16日 14:34`，靠右对齐；时间格式同 dsh（今天 `HH:MM`、同年 `M月D日 HH:MM`、跨年带年份）；流式进行中不显示，消息完成才出现；点「用量」弹「本轮用量」面板（提供方/模型、缓存命中、未缓存输入、缓存读取、输出、其中推理）
 9. 首页每个会话行右侧显示最后活跃时间（2026-10-19 新增）：今天显示 `HH:MM`，跨天显示 `MM/DD`，跨年显示 `YYYY/MM/DD`；悬停时排在项目名和垃圾桶按钮之间，不重叠
 10. 输入框下方一行三块统计（2026-10-23 参照 dsh 新增）：`⟳ 2 轮 37 步 · 97 tok/s` / `▤ 1.6M tok · 缓存命中 95%` / `◑ 1%`，各自可点开面板：①**会话统计**（模型用时、工具调用用时、单步平均耗时、输出速度 TPS）②**Token 用量**（总量、缓存命中、未缓存输入、缓存读取、输出、其中推理）③**上下文已用**（百分比、`~12K / 1M`、进度条、对话消息占用）
-10b. **tok/s 统一放在统计行第一块**（2026-10-24 从发送按钮左侧挪下来，并补上静止值）：订阅页面内 SSE（`/api/event`）统计 `session.text.delta` / `session.reasoning.delta` 的字符增量，按 2 秒滑动窗口 + token/字符 比例换算，再叠指数平滑 `ALPHA=0.4`；最后一个 delta 后约 2 秒（`IDLE=2000`）**收起 tok/s**，不拿平均值顶替 —— 平均值口径含首 token 等待与思考时间，数值明显偏低，老板实测「不准」，改回早先发送按钮旁的行为
+10b. **tok/s 统一放在统计行第一块**（2026-10-24 从发送按钮左侧挪下来，并补上静止值）：订阅页面内 SSE（`/api/event`）统计 `session.text.delta` / `session.reasoning.delta` 的字符增量，按 2 秒滑动窗口 + token/字符 比例换算，再叠指数平滑 `ALPHA=0.4`；最后一个 delta 后约 2 秒（`IDLE=2000`）**停止刷新并钉住最后一帧的实时值**（不消失、也不拿平均值顶替）—— 平均值口径含首 token 等待与思考时间，数值明显偏低，老板实测「不准」，改回早先发送按钮旁的行为
 11. **Ctrl+左键点文件路径 → 资源管理器打开所在目录并选中该文件**（2026-10-22 新增）：正文里出现的磁盘路径（`C:\a\b.ts`、`src/index.ts`、`apply-patch.mjs`，带 `:12` 行号也认）、编辑/写入文件卡片上的文件名都能点；Ctrl 按住悬停在路径上会变成手型，点了不跳网页（`http://` 之类不接管）。相对路径按当前会话的工作目录解析，目录里没有同名文件时再递归找一次
 
 ## 怎么做
@@ -152,6 +152,7 @@ LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar
 
 ## 坑（务必记住）
 
+- **扫调试口不能串行 + 无超时**：9222/9223 可能被 Windows 保留区间或残留监听占住，TCP 能握手但永远不回 HTTP —— `curl --max-time 2` 要 2 秒才判定 000，不带 `AbortSignal` 的 `fetch` 直接挂死。2026-10-24 实测：桌面端起在 9224，`verify.mjs` 卡了 5 分钟一行输出没有。现在 `page()` 改成 `Promise.all` 并发探 179 个端口、每个 `AbortSignal.timeout(900)`，一轮最多 0.9 秒，命中就返回。
 - **`style.cssText` 里的 `display:flex` 会被丢掉（2026-10-24 实测）**：`statsEl.style.cssText = 'display:flex;align-items:center;justify-content:center;gap:24px;...'` 执行后 `el.style.display` 是空串、computed 变 `display:block`，`gap`/`justify-content` 全部失效 —— 三块挤成一坨、整体靠左（实测 gaps=[0,0]、左右留白 4/447）。必须补 `el.style.setProperty('display','flex','important')`，并且放在 `ensureStats()` 的**所有返回路径**之前（复用早退分支也要补）。`verify.mjs --time` 会打印 `display/gap/实际间距/左右留白/居中`，只看元素存在会漏掉这个坑。
 
 - **asar header 的 JSON 长度必须和原版一模一样**（不足用空格补齐）。改短会让 `dataStart` 前移 → **Electron 启动失败，进程直接退出，连日志目录都不建**。`apply-patch.mjs` 已处理（`padEnd(jsonLen, ' ')` 且变长就报错）。

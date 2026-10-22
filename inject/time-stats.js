@@ -123,6 +123,7 @@
         ST.llmMs = llmMs;
         ST.ctx = lastCtx;
         LIVE.v = 0;  // 换会话/重载时别把上一条的平滑值带过来
+        LIVE.last = 0;
         ST.spanMs = firstAt && lastAt && lastAt > firstAt ? lastAt - firstAt : 0;
         ST.lastAt = lastAt;
         loadSess(sid, function () { paintAll(); });
@@ -359,7 +360,7 @@
     // ---------- 统计行内：tok/s（流式中实时，结束后 dsh 口径平均） ----------
     var K = 0.6, WIN = 2000, IDLE = 2000, ALPHA = 0.4;
     var D = [];
-    var LIVE = { v: 0 };  // 平滑后的实时 tok/s，停止输出即清零
+    var LIVE = { v: 0, last: 0 };  // v：平滑中的实时值；last：最后一次输出结束时的显示值，停止后钉住
 
     var kAdj = function () {
       var M2 = globalThis.__ocMsgTime$;
@@ -411,15 +412,16 @@
         // 指数平滑（新值 0.4）：滑窗在输出不均匀时会大幅摆动，直接显示像乱码
         LIVE.v = LIVE.v > 0 ? LIVE.v * (1 - ALPHA) + raw * ALPHA : raw;
         val = Math.round(LIVE.v);
+        LIVE.last = val;
       } else {
-        // 空闲/结束就收起来——之前按钮旁那版就是这样，不拿平均值顶替（平均值口径不同，看着只会「不准」）
-        LIVE.v = 0;
+        // 输出结束不消失：钉住最后那一帧的实时值，既不归零也不拿平均值顶替
+        val = LIVE.last || 0;
       }
       if (!val) { wrap.style.display = 'none'; return; }
       wrap.style.display = '';
       var txt = String(val);
       if (s.textContent !== txt) s.textContent = txt;
-      wrap.setAttribute('title', '实时输出速度（2 秒滑窗，平滑 0.4）');
+      wrap.setAttribute('title', live ? '实时输出速度（2 秒滑窗，平滑 0.4）' : '最后一次输出的实时速度（已停止输出）');
     };
 
     var connect = function () {
