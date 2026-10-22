@@ -81,6 +81,7 @@
       fetch(b + '/api/session/' + sid + '/message').then(function (r) { return r.json(); }).then(function (j) {
         var a = Array.isArray(j) ? j : ((j && (j.data || j.messages)) || []);
         var turns = 0, steps = 0, oTok = 0, decMs = 0, llmMs = 0, lastCtx = 0, firstAt = 0, lastAt = 0;
+        var txtCh = 0, toolCh = 0;
         for (var i = 0; i < a.length; i++) {
           var m = a[i];
           if (!m || !m.id || !m.time) continue;
@@ -89,8 +90,20 @@
           var ch = 0;
           if (m.content) for (var q = 0; q < m.content.length; q++) {
             var pp = m.content[q];
-            if (pp && (pp.type === 'text' || pp.type === 'reasoning')) ch += (pp.text || '').length;
+            if (!pp) continue;
+            if (pp.type === 'text' || pp.type === 'reasoning') { ch += (pp.text || '').length; continue; }
+            // 工具结果也要算进上下文：tool part 的入参 + 输出（state.content 数组或 state.output 字符串）
+            if (pp.type === 'tool') {
+              var stt = pp.state || {};
+              if (stt.input) { try { toolCh += JSON.stringify(stt.input).length; } catch (e) { } }
+              var cc = stt.content;
+              if (Array.isArray(cc)) {
+                for (var ci = 0; ci < cc.length; ci++) { var cp = cc[ci]; if (cp && cp.text) toolCh += cp.text.length; }
+              } else if (typeof cc === 'string') toolCh += cc.length;
+              if (typeof stt.output === 'string') toolCh += stt.output.length;
+            }
           }
+          txtCh += ch;
           M.set(m.id, {
             t: m.time,
             k: m.tokens,
@@ -122,6 +135,8 @@
         ST.decMs = decMs;
         ST.llmMs = llmMs;
         ST.ctx = lastCtx;
+        ST.msgCh = txtCh;
+        ST.toolCh = toolCh;
         LIVE.v = 0;  // 换会话/重载时别把上一条的平滑值带过来
         LIVE.last = 0;
         ST.spanMs = firstAt && lastAt && lastAt > firstAt ? lastAt - firstAt : 0;
@@ -590,10 +605,16 @@
           var lim = limOf(mid);
           if (!lim) loadModel(mid);
           var ctx = ST.ctx || 0;
+          // API 只给整轮 token 总量，拆不出精确的工具占用：按会话内「正文 / 工具」字符占比折算
+          var tch = ST.toolCh || 0, mch = ST.msgCh || 0, sum = tch + mch;
+          var toolTok = sum > 0 ? Math.round((ctx * tch) / sum) : 0;
+          var msgTok = ctx - toolTok;
           var pct = lim > 0 ? Math.min(100, Math.round((ctx / lim) * 1000) / 10) : 0;
           var bar = '<div style="height:6px;border-radius:3px;background:rgba(128,128,128,.25);margin:6px 0 8px;overflow:hidden"><div style="height:100%;width:' + pct + '%;background:#3b82f6;border-radius:3px"></div></div>';
           openPanel(st, '',
-            rowHtml('对话消息', '~' + fmtTok(ctx) + ' tok') +
+            rowHtml('对话消息', '~' + fmtTok(msgTok) + ' tok') +
+            rowHtml('工具结果', sum > 0 ? '~' + fmtTok(toolTok) + ' tok' : '—') +
+            rowHtml('合计占用', '~' + fmtTok(ctx) + ' tok') +
             rowHtml('上限', lim ? fmtTok(lim) + ' tok' : '—'),
             '<div style="display:flex;justify-content:space-between;gap:24px"><span style="font-weight:600">上下文已用 ' + pct + '%</span><span style="font-variant-numeric:tabular-nums;font-weight:600">~' + fmtTok(ctx) + ' / ' + (lim ? fmtTok(lim) : '—') + '</span></div>' + bar);
         }
