@@ -140,8 +140,11 @@ const P8_FIND = 'onOpenChange:t=>{r(`open`,t),e.onOpenChange?.(t),e.onContentRen
 const P8_REPL = 'onOpenChange:t=>{if(!_stream$()||!t)_rx$.set(e.id,t);(_stream$()&&t)||r(`open`,t),e.onContentRendered?.()}';
 // 2.1.1：渲染辅助名又换了一轮（旧版 x=effect / U=prop setter / Y=effect；新版 V=effect / B=prop setter / Y=Show 组件）。
 // 所以 P2_FIND 用新版写法，P2_REPL 里两个副作用也统一用 V —— 别照抄旧版的 x/Y。
-const P2_FIND = 'V(()=>B(n,`data-timeline-part-id`,e.id)),n})()}';
-const P2_REPL = 'V(()=>B(n,`data-timeline-part-id`,e.id)),(()=>{' +
+// 2.1.3：route 里 effect 又换成了 H，prop setter 变成 V —— 原文是 `H(()=>V(n,\`data-timeline-part-id\`,e.id))`，
+// 也就是 2.1.1 的 V/B 变成了 H/V。P2_REPL 内部两处 effect 调用（观察 MutationObserver、同步按钮显隐）也跟着改成 H。
+// 其它锚点（P1/P4/P8/D1–D8/F1/F2）在 2.1.3 原样可用。
+const P2_FIND = 'H(()=>V(n,`data-timeline-part-id`,e.id)),n})()}';
+const P2_REPL = 'H(()=>V(n,`data-timeline-part-id`,e.id)),(()=>{' +
   'var _foot$=document.createElement(`button`);' +
   '_foot$.setAttribute(`type`,`button`);' +
   '_foot$.setAttribute(`data-reasoning-collapse`,``);' +
@@ -159,7 +162,7 @@ const P2_REPL = 'V(()=>B(n,`data-timeline-part-id`,e.id)),(()=>{' +
   'var _pending$=!1;' +
   'var _mo$=new MutationObserver(()=>{if(!n.isConnected){_mo$.disconnect();return}if(_pending$)return;_pending$=!0;setTimeout(()=>{_pending$=!1;if(!n.isConnected){_mo$.disconnect();return}if(_want$()){_mo$.disconnect(),_collapse$()}},200)});' +
   // 必须在挂载后的 effect 里观察：IIFE 执行时 n 还没进 DOM，parentElement 是空的。
-  'V(()=>{if(_want$()){_collapse$();return}_mo$.observe(document.body,{childList:!0,subtree:!0})});' +
+  'H(()=>{if(_want$()){_collapse$();return}_mo$.observe(document.body,{childList:!0,subtree:!0})});' +
   // 滚动也要触发：块是被「滚」出视口的，光靠 MutationObserver 等不到。scroll 不冒泡，只能捕获阶段挂一次全局。
   'var _q$=globalThis.__ocFoldQ$||(globalThis.__ocFoldQ$=[]);' +
   'for(var _qi$=_q$.length-1;_qi$>=0;_qi$--)if(_q$[_qi$].id===e.id)_q$.splice(_qi$,1);' +
@@ -167,7 +170,7 @@ const P2_REPL = 'V(()=>B(n,`data-timeline-part-id`,e.id)),(()=>{' +
   'if(!globalThis.__ocFoldScan$){globalThis.__ocFoldScan$=function(){var _qq$=globalThis.__ocFoldQ$||[];for(var _sk$=_qq$.length-1;_sk$>=0;_sk$--){var _it$=_qq$[_sk$];if(!_it$.n.isConnected){_qq$.splice(_sk$,1);continue}if(_it$.want()){_qq$.splice(_sk$,1);_it$.fold()}}};document.addEventListener(`scroll`,function(){if(globalThis.__ocFoldT$)return;globalThis.__ocFoldT$=setTimeout(function(){globalThis.__ocFoldT$=0;globalThis.__ocFoldScan$()},120)},true)}' +
   '_foot$.addEventListener(`click`,t=>{t.preventDefault(),t.stopPropagation(),_collapse$()});' +
   'n.addEventListener(`dblclick`,t=>{if(t.target&&t.target.closest&&t.target.closest(`a,input,textarea,select,button`))return;_collapse$()});' +
-  'V(()=>{_foot$.style.display=i()&&!_stream$()?``:`none`}),n.appendChild(_foot$)' +
+  'H(()=>{_foot$.style.display=i()&&!_stream$()?``:`none`}),n.appendChild(_foot$)' +
   '})(),n})()}';
 
 // ---------- 3b) 首页会话行「删除」按钮 ----------
