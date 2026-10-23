@@ -128,6 +128,11 @@
             }
           }
         }
+        // 只有「当前正在看的会话」才允许覆盖统计：want() 会并发拉多个候选 sid，
+        // 后到的结果会把统计行改成别的会话的数字（甚至 0 步 → 整行闪没）
+        // guessSid() 在新会话刚建、还没写 last-active-url 时会返回空，这时放行（单一候选，不会互相覆盖）
+        var curSid = guessSid();
+        if (!curSid || sid === curSid) {
         ST.sid = sid;
         ST.turns = turns;
         ST.steps = steps;
@@ -137,10 +142,9 @@
         ST.ctx = lastCtx;
         ST.msgCh = txtCh;
         ST.toolCh = toolCh;
-        LIVE.v = 0;  // 换会话/重载时别把上一条的平滑值带过来
-        LIVE.last = 0;
         ST.spanMs = firstAt && lastAt && lastAt > firstAt ? lastAt - firstAt : 0;
         ST.lastAt = lastAt;
+        }
         loadSess(sid, function () { paintAll(); });
         then && then();
       }).catch(function () { }).then(function () { BUSY[sid] = 0; });
@@ -154,7 +158,7 @@
       BUSY['s:' + sid] = 1;
       fetch(b + '/api/session/' + sid).then(function (r) { return r.json(); }).then(function (j) {
         var s = j.data || j;
-        if (s) {
+        if (s && sid === guessSid()) {
           ST.sess = s.tokens || null;
           ST.sessSid = sid;
           ST.model = s.model || null;
@@ -348,7 +352,7 @@
           statsEl.innerHTML =
             '<span data-oc-stat="rounds" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer">' +
               '<span data-oc-rounds-text></span>' +
-              '<span data-oc-tps-wrap style="display:none">·&nbsp;<span data-oc-live-tps></span> tok/s</span>' +
+              '<span data-oc-tps-wrap style="visibility:hidden">·&nbsp;<span data-oc-live-tps></span> tok/s</span>' +
             '</span>' +
             '<span data-oc-stat="usage" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"></span>' +
             '<span data-oc-stat="ctx" style="display:inline-flex;align-items:center;gap:4px;cursor:pointer"></span>';
@@ -363,8 +367,9 @@
     var paintStats = function () {
       var el = ensureStats();
       if (!el) return;
-      if (!ST.steps && !ST.turns) { el.style.display = 'none'; return; }
-      el.style.display = '';
+      // 用 visibility 而不是 display：保留这 23px 高度，否则新会话数据没到的那一帧整行消失，输入框跟着上下跳
+      if (!ST.steps && !ST.turns) { el.style.visibility = 'hidden'; return; }
+      el.style.visibility = '';
 
       var rounds = el.querySelector('[data-oc-rounds-text]');
       var rt = '⟳ ' + (ST.turns ? ST.turns + ' 轮 ' : '') + (ST.steps || 0) + ' 步';
@@ -469,8 +474,9 @@
         // 输出结束不消失：钉住最后那一帧的实时值，既不归零也不拿平均值顶替
         val = LIVE.last || 0;
       }
-      if (!val) { wrap.style.display = 'none'; return; }
-      wrap.style.display = '';
+      // 同理用 visibility 保宽：tok/s 一消失第一块就变窄，居中布局会让整行左右横跳
+      if (!val) { wrap.style.visibility = 'hidden'; return; }
+      wrap.style.visibility = '';
       var txt = String(val);
       if (s.textContent !== txt) s.textContent = txt;
       wrap.setAttribute('title', live ? '实时输出速度（2 秒滑窗，平滑 0.4）' : '最后一次输出的实时速度（已停止输出）');
@@ -654,7 +660,10 @@
       if (now - lastSync < 2000) return;
       lastSync = now;
       var cur = guessSid();
-      if (cur && cur !== ST.sid && !BUSY[cur]) loadSid(cur, paintAll);
+      if (cur && cur !== ST.sid && !BUSY[cur]) {
+        LIVE.v = 0; LIVE.last = 0;  // 真换会话才清速度：loadSid 重跑不能把它打回 0
+        loadSid(cur, paintAll);
+      }
     };
     var paintAll = function () { paintMsg(); paintHome(); paintStats(); syncSid(); };
     var tick = function () {

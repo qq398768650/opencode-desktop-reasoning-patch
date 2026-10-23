@@ -241,6 +241,7 @@ renderer 没有打开目录的能力（`window.electron` 只有 `windowID / boot
 - **`/api/event` 在 Node 里直连是 401**（`{"_tag":"UnauthorizedError"}`），只有页面内 `fetch` 带得上认证。调试速度只能在页面上下文跑（CDP `Runtime.evaluate`）。
 - **token/字符 比要「先过滤再聚合」**：中位数会被纯工具调用消息带偏（比值到 5.96，中位数 0.794）；纯聚合比也会被少数异常拉高（0.732 vs 真实 0.62）。正确做法是 `c>=200` 且 `0.25<n/c<1.2` 过滤后取 `sum(n)/sum(c)`。
 - **速度窗口下限别给 500ms**：刚开口第一秒窗口没填满，500ms 当分母等于乘二（实测 296 tok/s），下限至少 1000ms。
+- **统计行会「频繁消失又出现」（新会话里最明显）**：三个原因叠加 —— ①`want()` 并发 `loadSid()` 多个候选 sid，后到的那个会覆盖 `ST.turns/steps`（别的会话数字，甚至 0 步 → 整行隐藏）；现在只有 `sid === guessSid()` 才写 `ST`。②`loadSid()` 每次都清 `LIVE.v/last`，把钉住的 tok/s 打回 0、第一块变窄；现在只在 `syncSid()` 判定真换会话时清。③隐藏如果走 `display:none`，那 23px 会塌掉、输入框上下跳；统计行和 tok/s 一律 `visibility:hidden` 保位。
 - **SSE 断了不会自动重连**：`connect()` 的 `catch` 只吞错误；用久了速度不显示就是这个原因，要修就加重连退避。
 - **preload 是 `/out/preload/index.cjs` 不是 `.js`**：只扫 `/out/renderer/assets` 查不到文件定位的标记，`--static` 要单独读 preload 和 `/out/main/index.js`。
 - **`window.electron` 是 contextBridge 的 frozen 对象**，没法 monkey-patch `revealPath` 记录调用。验证「真弹资源管理器」要读窗口选中项：`(New-Object -ComObject Shell.Application).Windows() | % { $_.Document.SelectedItems() }`；`showItemInFolder` 对已打开的窗口是复用+改选中，**不新增窗口**，别拿窗口数量判断。
