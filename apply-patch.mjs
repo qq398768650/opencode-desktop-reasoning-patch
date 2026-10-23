@@ -140,11 +140,12 @@ const P8_FIND = 'onOpenChange:t=>{r(`open`,t),e.onOpenChange?.(t),e.onContentRen
 const P8_REPL = 'onOpenChange:t=>{if(!_stream$()||!t)_rx$.set(e.id,t);(_stream$()&&t)||r(`open`,t),e.onContentRendered?.()}';
 // 2.1.1：渲染辅助名又换了一轮（旧版 x=effect / U=prop setter / Y=effect；新版 V=effect / B=prop setter / Y=Show 组件）。
 // 所以 P2_FIND 用新版写法，P2_REPL 里两个副作用也统一用 V —— 别照抄旧版的 x/Y。
-// 2.1.3：route 里 effect 又换成了 H，prop setter 变成 V —— 原文是 `H(()=>V(n,\`data-timeline-part-id\`,e.id))`，
-// 也就是 2.1.1 的 V/B 变成了 H/V。P2_REPL 内部两处 effect 调用（观察 MutationObserver、同步按钮显隐）也跟着改成 H。
-// 其它锚点（P1/P4/P8/D1–D8/F1/F2）在 2.1.3 原样可用。
-const P2_FIND = 'H(()=>V(n,`data-timeline-part-id`,e.id)),n})()}';
-const P2_REPL = 'H(()=>V(n,`data-timeline-part-id`,e.id)),(()=>{' +
+// 2.1.3：route 里 effect 换成了 H，prop setter 变成 V。
+// 2.1.4：又换回 2.1.1 的命名 —— effect = V、prop setter = B（实测 `V(()=>` 44 处、`V(()=>B(` 28 处、`H(()=>` 0 处），
+// 原文是 `V(()=>B(n,\`data-timeline-part-id\`,e.id))`。P2_REPL 内部两处 effect 调用也跟着用 V。
+// 其它锚点（P1/P4/P8/D1–D8/F1/F2）在 2.1.4 原样可用。
+const P2_FIND = 'V(()=>B(n,`data-timeline-part-id`,e.id)),n})()}';
+const P2_REPL = 'V(()=>B(n,`data-timeline-part-id`,e.id)),(()=>{' +
   'var _foot$=document.createElement(`button`);' +
   '_foot$.setAttribute(`type`,`button`);' +
   '_foot$.setAttribute(`data-reasoning-collapse`,``);' +
@@ -162,7 +163,7 @@ const P2_REPL = 'H(()=>V(n,`data-timeline-part-id`,e.id)),(()=>{' +
   'var _pending$=!1;' +
   'var _mo$=new MutationObserver(()=>{if(!n.isConnected){_mo$.disconnect();return}if(_pending$)return;_pending$=!0;setTimeout(()=>{_pending$=!1;if(!n.isConnected){_mo$.disconnect();return}if(_want$()){_mo$.disconnect(),_collapse$()}},200)});' +
   // 必须在挂载后的 effect 里观察：IIFE 执行时 n 还没进 DOM，parentElement 是空的。
-  'H(()=>{if(_want$()){_collapse$();return}_mo$.observe(document.body,{childList:!0,subtree:!0})});' +
+  'V(()=>{if(_want$()){_collapse$();return}_mo$.observe(document.body,{childList:!0,subtree:!0})});' +
   // 滚动也要触发：块是被「滚」出视口的，光靠 MutationObserver 等不到。scroll 不冒泡，只能捕获阶段挂一次全局。
   'var _q$=globalThis.__ocFoldQ$||(globalThis.__ocFoldQ$=[]);' +
   'for(var _qi$=_q$.length-1;_qi$>=0;_qi$--)if(_q$[_qi$].id===e.id)_q$.splice(_qi$,1);' +
@@ -170,7 +171,7 @@ const P2_REPL = 'H(()=>V(n,`data-timeline-part-id`,e.id)),(()=>{' +
   'if(!globalThis.__ocFoldScan$){globalThis.__ocFoldScan$=function(){var _qq$=globalThis.__ocFoldQ$||[];for(var _sk$=_qq$.length-1;_sk$>=0;_sk$--){var _it$=_qq$[_sk$];if(!_it$.n.isConnected){_qq$.splice(_sk$,1);continue}if(_it$.want()){_qq$.splice(_sk$,1);_it$.fold()}}};document.addEventListener(`scroll`,function(){if(globalThis.__ocFoldT$)return;globalThis.__ocFoldT$=setTimeout(function(){globalThis.__ocFoldT$=0;globalThis.__ocFoldScan$()},120)},true)}' +
   '_foot$.addEventListener(`click`,t=>{t.preventDefault(),t.stopPropagation(),_collapse$()});' +
   'n.addEventListener(`dblclick`,t=>{if(t.target&&t.target.closest&&t.target.closest(`a,input,textarea,select,button`))return;_collapse$()});' +
-  'H(()=>{_foot$.style.display=i()&&!_stream$()?``:`none`}),n.appendChild(_foot$)' +
+  'V(()=>{_foot$.style.display=i()&&!_stream$()?``:`none`}),n.appendChild(_foot$)' +
   '})(),n})()}';
 
 // ---------- 3b) 首页会话行「删除」按钮 ----------
@@ -257,14 +258,14 @@ const MAIN_REVEAL_JS = ';import("electron").then(function(m){try{m.ipcMain.handl
   '}catch(x){return!1}})}catch(x){}});';
 
 const D_RULES = [
-  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 时间/用量/速度/会话统计 + 文件定位', ',p8=!1,m8=500;', ',p8=!0,m8=500,' + D_TRASH_ICON + ';' + D_MULTI_JS + ';' + T_TIME_JS + ';' + T_FILE_JS + ';'],
+  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 时间/用量/速度/会话统计 + 文件定位', ',f8=!1,p8=500;', ',f8=!0,p8=500,' + D_TRASH_ICON + ';' + D_MULTI_JS + ';' + T_TIME_JS + ';' + T_FILE_JS + ';'],
   ['D2 tooltip 文案 归档→删除', 'get value(){return e.language.t(`common.archive`)}', 'get value(){return e.language.t(`common.delete`)}'],
   ['D3 动作标识 home-session-archive→delete', '`home-session-archive`', '`home-session-delete`'],
-  ['D4 图标 归档→垃圾桶 + 注册行→会话映射', 'get icon(){return F(hP,{name:`archive`})}', 'get icon(){return globalThis.__ocRegRow$&&globalThis.__ocRegRow$(e.server,e.record.session),globalThis.__ocDeleteApi$=e.onDeleteSession,F(ZZ_TRASH_ICON,{})}'],
+  ['D4 图标 归档→垃圾桶 + 注册行→会话映射', 'get icon(){return F(VP,{name:`archive`})}', 'get icon(){return globalThis.__ocRegRow$&&globalThis.__ocRegRow$(e.server,e.record.session),globalThis.__ocDeleteApi$=e.onDeleteSession,F(ZZ_TRASH_ICON,{})}'],
   ['D5 无障碍标签 归档→删除', 'get"aria-label"(){return e.language.t(`common.archive`)}', 'get"aria-label"(){return e.language.t(`common.delete`)}'],
   ['D6 点击动作 归档→删除 + Shift 免确认', D_ANCHOR, '(function(){var _p=globalThis.__ocSkipConfirm;globalThis.__ocSkipConfirm=!!t.shiftKey;try{e.onDeleteSession(e.server,e.record.session)}finally{globalThis.__ocSkipConfirm=_p}})()'],
   ['D7 showDelete 支持跳过确认框（走内部删除函数 v）', 'showDelete:(e,t)=>r.show(()=>F(y,{server:e,session:t}))', 'showDelete:(e,t)=>globalThis.__ocSkipConfirm?v(e,t):r.show(()=>F(y,{server:e,session:t}))'],
-  ['D8 会话右键菜单加「多选删除」入口', 'F(G4.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[z(()=>e.language.t(`common.delete`)),`…`]}})', 'F(G4.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[z(()=>e.language.t(`common.delete`)),`…`]}}),F(G4.Item,{onSelect:()=>globalThis.__ocMultiEnter$(e.server,e.record.session),get children(){return[z(()=>"多选删除"),`…`]}})'],
+  ['D8 会话右键菜单加「多选删除」入口', 'F(W4.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[z(()=>e.language.t(`common.delete`)),`…`]}})', 'F(W4.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[z(()=>e.language.t(`common.delete`)),`…`]}}),F(W4.Item,{onSelect:()=>globalThis.__ocMultiEnter$(e.server,e.record.session),get children(){return[z(()=>"多选删除"),`…`]}})'],
 ];
 
 function replaceOnce(content, find, repl, label) {

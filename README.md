@@ -81,7 +81,7 @@
 - Node.js 18+
 - opencode 桌面端（Electron 版，安装目录下有 `resources\app.asar`）
 
-支持版本：**2.1.3**（2.1.2 / 2.1.1 / 2.0.32 / 2.0.29 的锚点写法不同，见文末版本对照表）。opencode 升级后 minified 代码会变，锚点失效时脚本会明确报错，需要按下面「升级后锚点找不到」更新。
+支持版本：**2.1.4**（2.1.3 / 2.1.2 / 2.1.1 / 2.0.32 / 2.0.29 的锚点写法不同，见文末版本对照表）。opencode 升级后 minified 代码会变，锚点失效时脚本会明确报错，需要按下面「升级后锚点找不到」更新。
 
 **发布约定：本仓库的 tag / GitHub Release 版本号 = 适配的 opencode 桌面端版本号**（如 `v2.1.3`）。补丁修复本身不单独升版本，发到同一个 tag 上——版本号只表示「这份脚本能直接打的 opencode 版本」。
 
@@ -266,6 +266,7 @@ opencode 升级后 minified 代码会变，脚本会报「锚点没找到」。�
 | 2.1.1 | `/out/renderer/assets/route-B8ouoQvI.js`（357032 → 360284 B） | `/out/renderer/assets/main-ptWBkiKT.js`（官方 1311929 → 1320763 B） | 176355995 → 176368081 |
 | 2.1.2 | `/out/renderer/assets/route-BKcp3psp.js`（359447 → 362699 B） | `/out/renderer/assets/main-CRF7GP33.js`（官方 1312199 → 1329556 B，含时间 + 实时速度 + 文件定位）；preload 838 → 893 B；main 819112 → 819775 B | 176359724 → 176381051 |
 | 2.1.3 | `/out/renderer/assets/route-D__rI7PP.js`（369421 → 372673 B） | `/out/renderer/assets/main-DomFRUsy.js`（官方 1312668 → 1351743 B，含时间 + 实时速度 + 文件定位）；preload 838 → 893 B；main 819130 → 819793 B | 178044242 → 178087287 |
+| 2.1.4 | `/out/renderer/assets/route-BCLDih8W.js`（380688 → 383940 B） | `/out/renderer/assets/main-BCYk92jp.js`（官方 1314097 → 1356046 B，含时间 + 实时速度 + 文件定位）；preload 838 → 893 B；main 819139 → 819802 B | 178068364 → 178114283 |
 
 ---
 
