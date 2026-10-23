@@ -660,8 +660,14 @@
       if (now - lastSync < 2000) return;
       lastSync = now;
       var cur = guessSid();
-      if (cur && cur !== ST.sid && !BUSY[cur]) {
-        LIVE.v = 0; LIVE.last = 0;  // 真换会话才清速度：loadSid 重跑不能把它打回 0
+      // guessSid() 在新会话刚建时会在「新 sid / 旧最近资源 / 空」之间抖，抖一次就切一次会话 → 统计行反复清空又回填。
+      // 要求同一个 sid 连续两轮一致（首轮直接放行），抖动的候选一律不认。
+      var stable = cur && (cur === SID.lastCur || !SID.lastCur);
+      SID.lastCur = cur;
+      if (stable && cur !== ST.sid && !BUSY[cur]) {
+        // 真换会话：旧会话的数字立刻清掉，否则新会话会先显示上一条的轮数/步数，再变成空白、再变成新数（就是老板说的「消失出现」）
+        LIVE.v = 0; LIVE.last = 0;
+        ST.turns = 0; ST.steps = 0; ST.oTok = 0; ST.ctx = 0; ST.sess = null; ST.sessSid = '';
         loadSid(cur, paintAll);
       }
     };
