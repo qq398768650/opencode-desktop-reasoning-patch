@@ -49,6 +49,9 @@
     };
 
     var M = globalThis.__ocMsgTime$ || (globalThis.__ocMsgTime$ = new Map());
+    // msgId → 所属会话：DOM 里渲染的 data-timeline-part-id 能反查「用户此刻到底在看哪个会话」，
+    // localStorage / performance 资源都会滞后（实测切 tab 3 秒后仍指着上一个会话）
+    var OWN = globalThis.__ocMsgOwner$ || (globalThis.__ocMsgOwner$ = new Map());
     var ST = globalThis.__ocStats$ || (globalThis.__ocStats$ = {});
     var SID = globalThis.__ocMsgSid$ || (globalThis.__ocMsgSid$ = { lastTry: 0 });
     var BUSY = {};
@@ -104,6 +107,7 @@
             }
           }
           txtCh += ch;
+          OWN.set(m.id, sid);
           M.set(m.id, {
             t: m.time,
             k: m.tokens,
@@ -152,19 +156,22 @@
 
     var loadSess = function (sid, then) {
       if (!sid) return;
-      if (ST.sessSid === sid) { then && then(); return; }
+      // 会话累计 tokens 只在每轮结束后才更新，所以必须过期就重拉；
+      // 以前这里是 "sessSid 命中即返回"，数字永久冻结在首次拉取那一刻 —— 就是老板说的「没有真正跟随对话」
+      if (ST.sessSid === sid && Date.now() - (ST.sessAt || 0) < 2500) { then && then(); return; }
       if (BUSY['s:' + sid]) return;
       var b = apiBase(); if (!b) return;
       BUSY['s:' + sid] = 1;
       fetch(b + '/api/session/' + sid).then(function (r) { return r.json(); }).then(function (j) {
         var s = j.data || j;
-        if (s && sid === guessSid()) {
+        if (s && (sid === ST.sid || sid === guessSid())) {
           ST.sess = s.tokens || null;
           ST.sessSid = sid;
+          ST.sessAt = Date.now();
           ST.model = s.model || null;
         }
         then && then();
-      }).catch(function () { }).then(function () { BUSY['s:' + sid] = 0; });
+      }).catch(function () { ST.sessAt = Date.now(); }).then(function () { BUSY['s:' + sid] = 0; });
     };
 
     // 上下文上限按 model id 缓存。旧实现是单值 __ocCtxLimit$，一旦被第一个模型写进去就再也不更新：
@@ -370,6 +377,9 @@
       // 用 visibility 而不是 display：保留这 23px 高度，否则新会话数据没到的那一帧整行消失，输入框跟着上下跳
       if (!ST.steps && !ST.turns) { el.style.visibility = 'hidden'; return; }
       el.style.visibility = '';
+
+      // 3 秒兜底轮询：靠 tick()/SSE 触发的话，只有页面有 DOM 变动才会刷新，数字会看起来卡住
+      if (ST.sid && Date.now() - (ST.sessAt || 0) > 3000) loadSess(ST.sid, paintStats);
 
       var rounds = el.querySelector('[data-oc-rounds-text]');
       var rt = '⟳ ' + (ST.turns ? ST.turns + ' 轮 ' : '') + (ST.steps || 0) + ' 步';
@@ -632,7 +642,24 @@
 
     // ---------- 调度 ----------
     var guessSid = function () {
-      // 优先桌面端记录的当前会话；退化到最近的 /api/session 请求，再退化到标签页
+      SID.src = 0;
+      // 0) 标题栏标签页：data-active="true" 的 tab，key 形如 "sidecar\n/server/xxx/session/ses_…"，切换瞬间就变，最准
+      try {
+        var at = document.querySelector('[data-tab-key][data-active="true"]');
+        var am = at && (at.getAttribute('data-tab-key') || '').match(/(ses_[A-Za-z0-9]+)/);
+        if (am) { SID.src = 2; return am[1]; }
+      } catch (e) { }
+      // 1) DOM 里正在渲染的消息 → 反查它属于哪个会话。
+      // localStorage 的 last-active-url 和 performance 里的 /api/session 请求都可能滞后于真实切换（实测切 tab 3 秒后还指着旧会话）
+      try {
+        var els = document.querySelectorAll('[data-timeline-part-id]');
+        for (var d = els.length - 1; d >= 0 && d > els.length - 80; d--) {
+          var pid = (els[d].getAttribute('data-timeline-part-id') || '').split(':')[0];
+          var own = pid && OWN.get(pid);
+          if (own) { SID.src = 1; return own; }
+        }
+      } catch (e) { }
+      // 退化：桌面端记录的当前会话；再退化到最近的 /api/session 请求，再退化到标签页
       try {
         for (var i = 0; i < localStorage.length; i++) {
           var k = localStorage.key(i);
@@ -661,13 +688,13 @@
       lastSync = now;
       var cur = guessSid();
       // guessSid() 在新会话刚建时会在「新 sid / 旧最近资源 / 空」之间抖，抖一次就切一次会话 → 统计行反复清空又回填。
-      // 要求同一个 sid 连续两轮一致（首轮直接放行），抖动的候选一律不认。
-      var stable = cur && (cur === SID.lastCur || !SID.lastCur);
+      // 要求同一个 sid 连续两轮一致（首轮直接放行，来源是标题栏 tab 也直接放行 —— 那就是用户此刻点开的会话）。
+      var stable = cur && (cur === SID.lastCur || !SID.lastCur || SID.src === 2);
       SID.lastCur = cur;
       if (stable && cur !== ST.sid && !BUSY[cur]) {
         // 真换会话：旧会话的数字立刻清掉，否则新会话会先显示上一条的轮数/步数，再变成空白、再变成新数（就是老板说的「消失出现」）
         LIVE.v = 0; LIVE.last = 0;
-        ST.turns = 0; ST.steps = 0; ST.oTok = 0; ST.ctx = 0; ST.sess = null; ST.sessSid = '';
+        ST.turns = 0; ST.steps = 0; ST.oTok = 0; ST.ctx = 0; ST.sess = null; ST.sessSid = ''; ST.sessAt = 0;
         loadSid(cur, paintAll);
       }
     };
