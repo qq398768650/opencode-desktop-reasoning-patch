@@ -239,6 +239,79 @@
     };
 
     // ---------- 消息行：用量 + 时间 ----------
+    // 2.1.x：正文 part 末尾有 <div data-slot=text-part-footer><span data-slot=text-part-meta>，宿主取 meta.parentElement
+    // 2.2.0：助手 turn 的正文 part 会整块折叠进 collapsed-tool-group，页面上 text-part-meta / text-part-footer 全是 0，
+    //        旧逻辑一个都挂不上（实测 metas=0 / usageCount=0 / doneTimes=[]）→ 回退成「按 turn 行」处理：
+    //        在 [data-slot=session-turn-message-container] 末尾自建一行 meta，代表消息取整轮里最后一个有 time.completed 的 msg_ id
+    //        （2.2.0 行上的 data-message-id 是这一轮的用户消息 id，不能直接用）
+    var paintMsgRow = function (row) {
+      var box = row.querySelector('[data-slot=session-turn-message-container]');
+      if (!box) return;
+      var ids = [], parts = row.querySelectorAll('[data-timeline-part-id]'), i, pid;
+      for (i = 0; i < parts.length; i++) {
+        pid = (parts[i].getAttribute('data-timeline-part-id') || '').split(':')[0];
+        if (pid.indexOf('msg_') === 0 && ids.indexOf(pid) < 0) ids.push(pid);
+      }
+      pid = (row.getAttribute('data-message-id') || '').split(':')[0];
+      if (pid.indexOf('msg_') === 0 && ids.indexOf(pid) < 0) ids.push(pid);
+
+      var mid = '', rec = null, t = null, best = 0, r, tt;
+      for (i = 0; i < ids.length; i++) {
+        r = M.get(ids[i]);
+        tt = r && (r.t || r);
+        if (tt && tt.completed && (!best || tt.completed >= best)) { best = tt.completed; mid = ids[i]; rec = r; t = tt; }
+      }
+
+      var line = box.querySelector('[data-oc-msg-line]');
+      if (!t) {
+        if (line) line.remove();
+        if (!rec && ids.length) want(ids[ids.length - 1]);
+        return;
+      }
+      if (!line) {
+        line = document.createElement('div');
+        line.setAttribute('data-oc-msg-line', '1');
+        line.style.cssText = 'display:flex;align-items:center;justify-content:flex-end;gap:12px;padding-top:4px';
+        box.appendChild(line);
+      }
+
+      var tk = rec.k, total = 0, ca;
+      if (tk) {
+        ca = tk.cache || {};
+        total = (tk.input || 0) + (tk.output || 0) + (ca.read || 0) + (ca.write || 0);
+      }
+      var useEl = line.querySelector('[data-oc-usage]');
+      var timeEl = line.querySelector('[data-oc-done-time]');
+
+      if (tk && total > 0) {
+        if (!useEl) {
+          useEl = document.createElement('span');
+          useEl.setAttribute('data-oc-usage', '1');
+          useEl.className = 'text-12-regular text-text-weak';
+          useEl.style.cssText = 'white-space:nowrap;cursor:pointer;display:inline-flex;align-items:center;gap:4px;font-variant-numeric:tabular-nums';
+          useEl.innerHTML = '<svg width="11" height="11" aria-hidden="true" style="flex:0 0 auto;opacity:.8"><use href="#opencode-v2-icon-window-analytics"></use></svg><span data-oc-usage-txt></span>';
+          line.appendChild(useEl);
+        }
+        useEl.setAttribute('data-oc-mid', mid);
+        var utxt = '用量 ' + fmtTok(total) + ' tok';
+        var uTxtEl = useEl.querySelector('[data-oc-usage-txt]');
+        if (uTxtEl && uTxtEl.textContent !== utxt) uTxtEl.textContent = utxt;
+      } else if (useEl) {
+        useEl.remove();
+        useEl = null;
+      }
+
+      if (!timeEl) {
+        timeEl = document.createElement('span');
+        timeEl.setAttribute('data-oc-done-time', '1');
+        timeEl.className = 'text-12-regular text-text-weak';
+        timeEl.style.cssText = 'white-space:nowrap;font-variant-numeric:tabular-nums;opacity:.8';
+        line.appendChild(timeEl);
+      }
+      var txt = fmtClock(t.completed);
+      if (timeEl.textContent !== txt) timeEl.textContent = txt;
+    };
+
     var paintMsg = function () {
       var metas = document.querySelectorAll('[data-slot=text-part-meta]');
       for (var i = 0; i < metas.length; i++) {
@@ -303,6 +376,13 @@
         else timeEl.style.marginLeft = '';
         var txt = fmtClock(t.completed);
         if (timeEl.textContent !== txt) timeEl.textContent = txt;
+      }
+
+      // 2.2.0 回退：正文 footer 不存在时按 turn 行挂一行 meta（行内若已渲染 text-part-meta 说明是旧结构，跳过避免重复）
+      var rows = document.querySelectorAll('[data-timeline-row=AssistantPart]'), j;
+      for (j = 0; j < rows.length; j++) {
+        if (rows[j].querySelector('[data-slot=text-part-meta]')) continue;
+        paintMsgRow(rows[j]);
       }
     };
 

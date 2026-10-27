@@ -185,6 +185,7 @@ if (process.argv.includes('--time')) {
       rows: document.querySelectorAll('[data-session-id]').length,
       homeTimes: [...document.querySelectorAll('[data-oc-home-time]')].map(e => e.textContent).slice(0, 6),
       metas: document.querySelectorAll('[data-slot="text-part-meta"]').length,
+      msgLines: document.querySelectorAll('[data-oc-msg-line]').length,
       doneTimes: [...document.querySelectorAll('[data-oc-done-time]')].map(e => e.textContent).slice(-6),
       speedBoot: !!globalThis.__ocSpeedBoot$,
       speedEl: document.querySelectorAll('[data-oc-live-tps]').length,
@@ -213,7 +214,9 @@ if (process.argv.includes('--time')) {
   })()`);
   console.log(JSON.stringify(out, null, 2));
   const okHome = out.rows > 0 ? out.homeTimes.length > 0 : true;
-  const okMsg = out.metas > 0 ? out.doneTimes.length > 0 : true;
+  // 2.2.0：折叠工具组时 text-part-meta 是 0（正文 part 不渲染），补丁改按 turn 行挂 [data-oc-msg-line]，
+  // 两种宿主任意一种有就不算失败
+  const okMsg = (out.metas > 0 || out.msgLines > 0) ? out.doneTimes.length > 0 : true;
   // 首页没有输入框也没有统计行，速度/tok-s 布局只存在于会话页 —— 在首页时这两项按「不适用」处理，
   // 否则切到首页验首页活跃时间会永远报失败（2026-10-24 实测）
   const onHome = out.rows > 0 && !out.statsLayout;
