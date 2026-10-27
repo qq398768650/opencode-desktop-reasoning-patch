@@ -81,7 +81,9 @@
       if (!sid || BUSY[sid]) return;
       var b = apiBase(); if (!b) return;
       BUSY[sid] = 1;
-      fetch(b + '/api/session/' + sid + '/message').then(function (r) { return r.json(); }).then(function (j) {
+      // limit 必须显式给：默认只返回最后 50 条，长会话的 user 消息全被截掉 → 「⟳ 0 轮 45 步」、上下文/速度也跟着偏；
+      // 200 是服务端上限（250 起返回 400），实测 120 条的会话能全量拿到
+      fetch(b + '/api/session/' + sid + '/message?limit=200').then(function (r) { return r.json(); }).then(function (j) {
         var a = Array.isArray(j) ? j : ((j && (j.data || j.messages)) || []);
         var turns = 0, steps = 0, oTok = 0, decMs = 0, llmMs = 0, lastCtx = 0, firstAt = 0, lastAt = 0;
         var txtCh = 0, toolCh = 0;
@@ -520,7 +522,9 @@
                 paintSpeed();
               } else if (ev.type === 'session.text.ended' || ev.type === 'session.step.ended' || ev.type === 'session.execution.succeeded') {
                 setTimeout(paintSpeed, 1400);
-                setTimeout(paintAll, 1500);
+                // 一轮结束再拉一次消息列表：轮数/步数/上下文都来自 /message，只在 boot 时拉一次的话
+                // 一条消息发完统计行还是旧的（这是老板说的「会话统计没跟随会话」的另一半）
+                setTimeout(function () { if (ST.sid) loadSid(ST.sid, paintAll); else paintAll(); }, 1500);
               }
             }
             pump();
@@ -694,6 +698,8 @@
       if (stable && cur !== ST.sid && !BUSY[cur]) {
         // 真换会话：旧会话的数字立刻清掉，否则新会话会先显示上一条的轮数/步数，再变成空白、再变成新数（就是老板说的「消失出现」）
         LIVE.v = 0; LIVE.last = 0;
+        // 面板里的轮数/步数/用量都是切会话那一刻的快照，留着只会显示上一个会话的数字
+        try { closePanel(); } catch (e) { }
         ST.turns = 0; ST.steps = 0; ST.oTok = 0; ST.ctx = 0; ST.sess = null; ST.sessSid = ''; ST.sessAt = 0;
         loadSid(cur, paintAll);
       }
@@ -708,7 +714,11 @@
       mo.observe(document.body || document.documentElement, { childList: true, subtree: true });
     } catch (e) { }
     setInterval(paintHome, 15000);
-    setInterval(paintSpeed, 400);
+    // SSE 断线时也不能让轮数/步数永远停在打开那一刻；20 秒一次，代价远小于每帧重拉
+    setInterval(function () { if (ST.sid && !BUSY[ST.sid]) loadSid(ST.sid, paintStats); }, 20000);
+    // 切 tab 之后 DOM 可能长时间没有 mutation（渲染完就不动了），只靠 tick 的话统计行会一直停在旧会话上，
+    // 要等 20 秒兜底才跟上。这里借 400ms 的速度定时器顺手喊一声 syncSid()（它自己 2 秒限流）。
+    setInterval(function () { paintSpeed(); syncSid(); }, 400);
     var boot = function () {
       if (!apiBase()) { setTimeout(boot, 1000); return; }
       connect();
