@@ -998,8 +998,34 @@
       if (!rwState.grip) { rwInstall(); if (rwState.grip) return; }
       rwPlace();
     };
+    // 右上角「切换审查」、侧栏开合这类操作会改主区可用宽度，正文列被挤窄（实测 1000 → 600），
+    // 手柄必须立刻跟上；只靠 800ms 轮询会明显慢半拍。这里用 ResizeObserver 盯住每一列的尺寸，
+    // 任何布局变化（面板开合、窗口缩放、窗口最大化）都即时重算。
+    var rwRO = null;
+    var rwObserve = function () {
+      if (typeof ResizeObserver === 'undefined') return;
+      if (!rwRO) rwRO = new ResizeObserver(function () { rwPlace(); });
+      var els = rwTargets();
+      for (var i = 0; i < els.length; i++) {
+        if (!els[i].__ocRwRo$) { els[i].__ocRwRo$ = 1; rwRO.observe(els[i]); }
+      }
+    };
     rwBoot();
-    setInterval(rwBoot, 800);
+    rwObserve();
+    setInterval(function () { rwBoot(); rwObserve(); }, 800);
+    // 兜底：点任何按钮后按帧跟 1.5 秒 —— 面板开合带宽度过渡动画，只在 60/300/800ms 补算会中途错位
+    var rwTrackUntil = 0, rwTrackOn = false;
+    var rwTrack = function (ms) {
+      rwTrackUntil = performance.now() + (ms || 1500);
+      if (rwTrackOn || typeof requestAnimationFrame === 'undefined') return;
+      rwTrackOn = true;
+      var step = function () {
+        rwPlace();
+        if (performance.now() < rwTrackUntil) requestAnimationFrame(step); else rwTrackOn = false;
+      };
+      requestAnimationFrame(step);
+    };
+    window.addEventListener('click', function () { rwTrack(1500); }, true);
     window.addEventListener('resize', rwPlace);
 
     var boot = function () {

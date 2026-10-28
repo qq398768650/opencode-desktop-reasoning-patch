@@ -147,6 +147,7 @@ if (process.argv.includes('--static')) {
     ['正文宽度 · 常驻竖线 data-oc-grip-line', anyChunk('data-oc-grip-line')],
     ['正文宽度 · 宽度气泡 data-oc-grip-chip', anyChunk('data-oc-grip-chip')],
     ['正文宽度 · 持久化键 oc-read-width', anyChunk('oc-read-width')],
+    ['正文宽度 · 跟随审查面板（ResizeObserver + rAF）', anyChunk('__ocRwRo$') && anyChunk('rwTrackUntil')],
     ['文件定位 · preload 暴露 revealPath', (others['/out/preload/index.cjs'] || '').includes('oc:reveal-path')],
     ['文件定位 · 主进程 IPC oc:reveal-path', (others['/out/main/index.js'] || '').includes('oc:reveal-path')],
   ];
