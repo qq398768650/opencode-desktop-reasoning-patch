@@ -142,6 +142,7 @@ if (process.argv.includes('--static')) {
     ['速度按会话隔离 · LIVE_BY 按 sid 分桶', anyChunk('LIVE_BY')],
     ['速度口径 · 每轮实测平均 ST.lastTurn', anyChunk('ST.lastTurn')],
     ['速度口径 · 本轮累计字符 dL.ch', anyChunk('dL.ch')],
+    ['速度口径 · 纯生成窗口 genMs（排除 TTFT）', anyChunk('var genMs = outFirst')],
     ['正文宽度 · 拖拽手柄 data-oc-width-grip', anyChunk('data-oc-width-grip')],
     ['正文宽度 · 常驻竖线 data-oc-grip-line', anyChunk('data-oc-grip-line')],
     ['正文宽度 · 宽度气泡 data-oc-grip-chip', anyChunk('data-oc-grip-chip')],

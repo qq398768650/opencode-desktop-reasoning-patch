@@ -92,11 +92,20 @@
           if (!m || !m.id || !m.time) continue;
           if (m.time.created && (!firstAt || m.time.created < firstAt)) firstAt = m.time.created;
           if (m.time.completed && m.time.completed > lastAt) lastAt = m.time.completed;
-          var ch = 0;
+          var ch = 0, outFirst = 0, outLast = 0;
           if (m.content) for (var q = 0; q < m.content.length; q++) {
             var pp = m.content[q];
             if (!pp) continue;
-            if (pp.type === 'text' || pp.type === 'reasoning') { ch += (pp.text || '').length; continue; }
+            if (pp.type === 'text' || pp.type === 'reasoning') {
+              ch += (pp.text || '').length;
+              // 生成窗口：首个输出片段的 created → 最后一个输出片段的 completed。
+              // 这是唯一能贴住「纯生成时间」的字段（message.time.created 里含 TTFT/网络等待，
+              // 直接拿 completed-created 当分母会把速度算低 20%~40%，pi 就是把这些等待单列的）
+              var ptt = pp.time || {};
+              if (ptt.created && (!outFirst || ptt.created < outFirst)) outFirst = ptt.created;
+              if (ptt.completed && ptt.completed > outLast) outLast = ptt.completed;
+              continue;
+            }
             // 工具结果也要算进上下文：tool part 的入参 + 输出（state.content 数组或 state.output 字符串）
             if (pp.type === 'tool') {
               var stt = pp.state || {};
@@ -124,20 +133,24 @@
             if (tk) {
               var ca = tk.cache || {};
               lastCtx = (tk.input || 0) + (ca.read || 0) + (ca.write || 0) + (tk.output || 0);
-              if (ch >= 50) oTok += (tk.output || 0) + (tk.reasoning || 0);
             }
-            if (ch >= 50 && m.time.completed && m.time.created) {
-              // 只把「有正文的模型步」计入：纯工具步骤会把分母撑大、速度凭空掉一半
-              var stepMs = Math.max(0, m.time.completed - m.time.created);
-              llmMs += stepMs;
-              decMs += stepMs;
-              // 每轮实测平均：这一轮（一个 assistant message）的 output+reasoning ÷ 这一轮真实墙钟
-              // 老板要「以实际为准，取每轮的平均」，不要会话累计、也不要滑窗估算
-              var stepTok = (tk.output || 0) + (tk.reasoning || 0);
-              if (stepMs > 0 && stepTok > 0) {
+            if (ch >= 20 && m.time.completed) {
+              // 分母：优先「首个输出片段 → 最后一次流式更新」的纯生成窗口（不含 TTFT、不含工具执行）。
+              // part.time 偶尔只覆盖最后一段（历史轮能见到 15ms 这种畸形值），所以用 message.time.streamed
+              // 作上界更稳；两样都拿不到才退回整步墙钟，并在 title 里注明「含请求等待」。
+              var wallMs = m.time.created ? Math.max(0, m.time.completed - m.time.created) : 0;
+              var streamEnd = m.time.streamed || outLast || m.time.completed;
+              var genMs = outFirst && streamEnd > outFirst ? streamEnd - outFirst : 0;
+              if (genMs < 300) genMs = 0;
+              var stepMs = genMs || wallMs;
+              var stepTok = tk ? (tk.output || 0) + (tk.reasoning || 0) : 0;
+              // 会话平均只累计「有纯生成窗口」的轮次，分子分母同口径（含等待的轮次会把平均拉低）
+              if (genMs) { decMs += genMs; llmMs += genMs; oTok += stepTok; }
+              if (stepMs >= 300 && stepTok > 0) {
                 var tps = stepTok * 1000 / stepMs;
-                if (!lastTurn || m.time.completed >= lastTurn.at) {
-                  lastTurn = { tps: Math.round(tps), tok: stepTok, ms: stepMs, at: m.time.completed };
+                // 10~800 tok/s 之外基本是残缺数据（part 被覆盖、整步被工具等待撑大），宁可不出这个数
+                if (tps >= 10 && tps <= 800 && (!lastTurn || m.time.completed >= lastTurn.at)) {
+                  lastTurn = { tps: Math.round(tps), tok: stepTok, ms: stepMs, ch: ch, at: m.time.completed, est: !genMs };
                 }
               }
             }
@@ -590,7 +603,9 @@
         // 中途调工具的等待也算在分母里 —— 这就是「以实际为准」的每轮平均，不再用 2 秒滑窗当显示值
         if (L.t0 && L.ch > 0) {
           sec = Math.max(0.6, (now - L.t0) / 1000);
-          tok = Math.round(L.ch * kAdj());
+          // 本会话上一轮的「token ÷ 字符」比已知，就优先用它（各模型分词率差很多，全局比会把实时值算偏）
+          var ratio = ST.lastTurn && ST.lastTurn.ch > 50 ? ST.lastTurn.tok / ST.lastTurn.ch : kAdj();
+          tok = Math.round(L.ch * ratio);
           if (tok > 0) { val = Math.max(1, Math.round(tok / sec)); kind = 'turn-live'; }
         }
         if (!val) { val = L.last; kind = 'live'; }
@@ -611,9 +626,9 @@
       var txt = String(val);
       if (s.textContent !== txt) s.textContent = txt;
       var title;
-      if (kind === 'turn-live') title = '本轮平均输出速度（实时估算：约 ' + tok + ' tok / ' + sec.toFixed(1) + ' 秒）';
-      else if (kind === 'turn') title = '本轮实测平均（' + tok + ' tok / ' + sec.toFixed(1) + ' 秒）';
-      else if (kind === 'avg') title = '本会话平均输出速度（Σoutput ÷ Σ每轮耗时）';
+      if (kind === 'turn-live') title = '本轮生成速度（实时估算：约 ' + tok + ' tok / ' + sec.toFixed(1) + ' 秒，不含等待）';
+      else if (kind === 'turn') title = '本轮生成速度（' + tok + ' tok / ' + sec.toFixed(1) + ' 秒' + (ST.lastTurn && ST.lastTurn.est ? '，含请求等待' : '，不含等待') + '）';
+      else if (kind === 'avg') title = '本会话平均生成速度（Σoutput ÷ Σ每轮生成耗时）';
       else if (kind === 'live') title = '实时输出速度（2 秒滑窗）';
       else title = '最后一次输出的实时速度（已停止输出）';
       wrap.setAttribute('title', title);
