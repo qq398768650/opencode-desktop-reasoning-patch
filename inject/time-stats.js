@@ -509,7 +509,16 @@
     // ---------- 统计行内：tok/s（流式中实时，结束后 dsh 口径平均） ----------
     var K = 0.6, WIN = 2000, IDLE = 2000, ALPHA = 0.4;
     var D = [];
-    var LIVE = { v: 0, last: 0 };  // v：平滑中的实时值；last：最后一次输出结束时的显示值，停止后钉住
+    // 按会话分桶：一个会话没在跑，就绝不能显示另一个会话正在输出的速度（老板实测「没运行却显示别的会话速度」）
+    var LIVE_BY = Object.create(null);
+    var liveFor = function (sid) { var k = sid || ''; return LIVE_BY[k] || (LIVE_BY[k] = { v: 0, last: 0 }); };
+    var sameSid = function (rec, cur) {
+      if (!rec) return false;
+      if (rec.sid) return rec.sid === cur;
+      var own = rec.mid && OWN ? OWN.get(rec.mid) : '';
+      return !!(own && own === cur);
+    };
+    var LIVE = { v: 0, last: 0 };  // 兼容旧引用，已不参与显示
 
     var kAdj = function () {
       var M2 = globalThis.__ocMsgTime$;
@@ -543,38 +552,42 @@
       if (!s || !st) return;
       var wrap = st.querySelector('[data-oc-tps-wrap]');
       if (!wrap) return;
+      // 只统计「当前正在看的会话」的 chunk：SSE 是全进程的，别的会话在输出时也会推 delta，
+      // 不过滤就会出现「这个会话没在跑，却在跳别人的速度」
+      var cur = guessSid() || ST.sid || '';
+      var L = liveFor(cur);
       var now = performance.now(), cut = now - WIN, i, sum = 0, oldest = now, last = 0;
       for (i = D.length - 1; i >= 0; i--) {
         var r = D[i];
         if (r.t < cut) break;
+        if (!sameSid(r, cur)) continue;
         sum += r.n;
         if (r.t < oldest) oldest = r.t;
         if (r.t > last) last = r.t;
       }
       while (D.length && D[0].t < now - 8000) D.shift();
       var live = !!sum && now - last <= IDLE;
-      var val = 0;
+      var val = 0, isAvg = false;
       if (live) {
         var span = Math.min(WIN, now - oldest);
         if (span < 1000) span = 1000;
         var raw = sum / span * 1000 * kAdj();
         // 指数平滑（新值 0.4）：滑窗在输出不均匀时会大幅摆动，直接显示像乱码
-        LIVE.v = LIVE.v > 0 ? LIVE.v * (1 - ALPHA) + raw * ALPHA : raw;
-        val = Math.round(LIVE.v);
-        LIVE.last = val;
+        L.v = L.v > 0 ? L.v * (1 - ALPHA) + raw * ALPHA : raw;
+        val = Math.round(L.v);
+        L.last = val;
       } else {
-        // 输出结束不消失：钉住最后那一帧的实时值，既不归零也不拿平均值顶替；
-        // 但从没在本进程里输出过（刚启动桌面端 / 刚切会话，LIVE.last 被清零）时，
-        // 整块 tok/s 会 visibility:hidden —— 表现就是「看不到当前会话的速度」。
-        // 这时落回本会话平均速度（Σoutput / Σ有正文模型步的墙钟），重启后也有数。
-        val = LIVE.last || avgTps();
+        // 没在输出：优先落回「这个会话自己的」平均速度（Σoutput / Σ有正文模型步的墙钟）；
+        // ST 还没切到当前会话时宁可空着，也不能拿上一个会话的平均值顶替
+        if (ST.sid && ST.sid === cur) { val = avgTps(); isAvg = val > 0; }
+        if (!val) val = L.last;
       }
       // 同理用 visibility 保宽：tok/s 一消失第一块就变窄，居中布局会让整行左右横跳
       if (!val) { wrap.style.visibility = 'hidden'; return; }
       wrap.style.visibility = '';
       var txt = String(val);
       if (s.textContent !== txt) s.textContent = txt;
-      wrap.setAttribute('title', live ? '实时输出速度（2 秒滑窗，平滑 0.4）' : (LIVE.last ? '最后一次输出的实时速度（已停止输出）' : '本会话平均输出速度（还没有实时输出）'));
+      wrap.setAttribute('title', live ? '实时输出速度（2 秒滑窗，平滑 0.4）' : (isAvg ? '本会话平均输出速度' : '最后一次输出的实时速度（已停止输出）'));
     };
 
     var connect = function () {
@@ -601,7 +614,8 @@
               var dd = ev.data;
               if (!dd) continue;
               if ((ev.type === 'session.text.delta' || ev.type === 'session.reasoning.delta') && dd.delta && dd.assistantMessageID) {
-                D.push({ t: performance.now(), n: dd.delta.length, mid: dd.assistantMessageID });
+                // sid 必须一起记：SSE 是全进程的，别的会话的 delta 也会进来
+                D.push({ t: performance.now(), n: dd.delta.length, mid: dd.assistantMessageID, sid: dd.sessionID || (OWN && OWN.get(dd.assistantMessageID)) || '' });
                 paintSpeed();
               } else if (ev.type === 'session.text.ended' || ev.type === 'session.step.ended' || ev.type === 'session.execution.succeeded') {
                 setTimeout(paintSpeed, 1400);
@@ -802,6 +816,98 @@
     // 切 tab 之后 DOM 可能长时间没有 mutation（渲染完就不动了），只靠 tick 的话统计行会一直停在旧会话上，
     // 要等 20 秒兜底才跟上。这里借 400ms 的速度定时器顺手喊一声 syncSid()（它自己 2 秒限流）。
     setInterval(function () { paintSpeed(); syncSid(); }, 400);
+
+    // ---------- 正文宽度拖拽（参考 pi-desktop：正文右缘悬停变水平缩放光标，左右拖调宽） ----------
+    var RW_KEY = 'oc-read-width';
+    var rwState = { grip: null, w: 0, dragging: false, baseX: 0, baseW: 0 };
+    var rwTargets = function () { return document.querySelectorAll('[class*="max-w-session"]'); };
+    var rwTarget = function () {
+      var els = rwTargets();
+      return els.length ? els[0] : null;
+    };
+    var rwApply = function (w) {
+      var els = rwTargets();
+      if (!els.length) return;
+      var max = Math.max(560, Math.round(window.innerWidth - 140));
+      w = Math.max(560, Math.min(max, Math.round(w || 1000)));
+      for (var i = 0; i < els.length; i++) els[i].style.maxWidth = w + 'px';
+      rwState.w = w;
+      try { localStorage.setItem(RW_KEY, String(w)); } catch (e) { }
+    };
+    var rwPlace = function () {
+      var g = rwState.grip;
+      if (!g) return;
+      var els = rwTargets();
+      if (!els.length) { if (g.style.display !== 'none') g.style.display = 'none'; return; }
+      var r = els[0].getBoundingClientRect();
+      // 列是居中的，水平位置对所有 turn 都一样；垂直滚动不影响 left
+      var ok = r.width > 0 && r.right > 0 && r.right < window.innerWidth + 2;
+      if (!ok) { if (g.style.display !== 'none') g.style.display = 'none'; return; }
+      if (g.style.display !== 'block') g.style.display = 'block';
+      var left = Math.round(r.right - 5);
+      var top = Math.round(Math.max(72, window.innerHeight * 0.34));
+      if (g.dataset.left !== String(left)) { g.style.left = left + 'px'; g.dataset.left = String(left); }
+      if (g.dataset.top !== String(top)) { g.style.top = top + 'px'; g.dataset.top = String(top); }
+    };
+    var rwInstall = function () {
+      if (rwState.grip) return;
+      var g = document.createElement('div');
+      g.setAttribute('data-oc-width-grip', '1');
+      g.style.cssText = 'position:fixed;display:block;width:10px;height:132px;z-index:80;cursor:col-resize;border-radius:5px;background:transparent;transition:background .12s ease;user-select:none;touch-action:none';
+      g.title = '拖动调整正文宽度（双击恢复默认）';
+      g.addEventListener('mouseenter', function () { g.style.background = 'rgba(128,128,128,.35)'; });
+      g.addEventListener('mouseleave', function () { if (!rwState.dragging) g.style.background = 'transparent'; });
+      g.addEventListener('pointerdown', function (e) {
+        var t = rwTarget();
+        if (!t) return;
+        e.preventDefault(); e.stopPropagation();
+        rwState.dragging = true;
+        rwState.baseX = e.clientX;
+        rwState.baseW = Math.round(t.getBoundingClientRect().width) || rwState.w || 1000;
+        try { g.setPointerCapture(e.pointerId); } catch (err) { }
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        g.style.background = 'rgba(128,128,128,.5)';
+      });
+      g.addEventListener('pointermove', function (e) {
+        if (!rwState.dragging) return;
+        e.preventDefault();
+        // 正文列是 mx-auto 居中：右缘每拖动 1px，宽度变化 2px（左右各扩 1px），手感才跟手
+        rwApply(rwState.baseW + (e.clientX - rwState.baseX) * 2);
+        rwPlace();
+      });
+      var rwEnd = function () {
+        if (!rwState.dragging) return;
+        rwState.dragging = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        g.style.background = 'transparent';
+      };
+      g.addEventListener('pointerup', rwEnd);
+      g.addEventListener('pointercancel', rwEnd);
+      g.addEventListener('dblclick', function (e) {
+        e.preventDefault(); e.stopPropagation();
+        try { localStorage.removeItem(RW_KEY); } catch (err) { }
+        var els = rwTargets();
+        for (var i2 = 0; i2 < els.length; i2++) els[i2].style.maxWidth = '';
+        rwState.w = 0;
+        rwPlace();
+      });
+      (document.body || document.documentElement).appendChild(g);
+      rwState.grip = g;
+      var saved = 0;
+      try { saved = parseInt(localStorage.getItem(RW_KEY) || '0', 10) || 0; } catch (e) { }
+      if (saved) rwApply(saved);
+      rwPlace();
+    };
+    var rwBoot = function () {
+      if (!rwState.grip) { rwInstall(); if (rwState.grip) return; }
+      rwPlace();
+    };
+    rwBoot();
+    setInterval(rwBoot, 800);
+    window.addEventListener('resize', rwPlace);
+
     var boot = function () {
       if (!apiBase()) { setTimeout(boot, 1000); return; }
       connect();
