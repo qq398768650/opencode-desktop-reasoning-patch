@@ -3,8 +3,10 @@
     if (globalThis.__ocFileBoot$) return;
     globalThis.__ocFileBoot$ = !0;
 
-    var DIR = null;          // 当前会话工作目录（缓存）
+    var DIR = null;          // 当前会话工作目录（缓存，与 DIR_SID 绑定）
+    var DIR_SID = null;      // 上面这个 DIR 属于哪个会话
     var DIR_P = null;        // 进行中的查询
+    var DIR_P_SID = null;    // 进行中查询对应的 sid
 
     function base() {
       var n = performance.getEntriesByType("resource"), i, u, m;
@@ -28,21 +30,20 @@
       return null;
     }
 
-    // 目录来源：① 首页行映射（快） ② 后端 /api/session/<sid>（准，页面内 fetch 带得上认证）
+    // 目录来源：① 首页行映射里当前 sid 那条（快、准） ② 后端 /api/session/<sid>（准）
+    // 绝不「随便取首页第一条」——切会话后 DIR 会串到别的项目，表现为「点了没反应」。
+    // 缓存与 sid 绑定，切会话自动失效。
     function ensureDir() {
-      if (DIR) return Promise.resolve(DIR);
-      if (DIR_P) return DIR_P;
+      var sid = sidNow();
+      if (DIR && DIR_SID === sid) return Promise.resolve(DIR);
+      if (DIR_P && DIR_P_SID === sid) return DIR_P;
+      DIR_P_SID = sid;
       DIR_P = new Promise(function (res) {
         try {
-          var map = globalThis.__ocRowMap$, sid = sidNow();
-          if (map) {
-            var s = sid && map.get && map.get(sid) && map.get(sid).session;
-            if (s && s.location && s.location.directory) { DIR = s.location.directory; return res(DIR); }
-            var it = map.values(), n;
-            while (!(n = it.next()).done) {
-              var s2 = n.value && n.value.session;
-              if (s2 && s2.location && s2.location.directory) { DIR = s2.location.directory; return res(DIR); }
-            }
+          var map = globalThis.__ocRowMap$;
+          if (map && map.get && sid) {
+            var row = map.get(sid), s = row && row.session;
+            if (s && s.location && s.location.directory) { DIR = s.location.directory; DIR_SID = sid; return res(DIR); }
           }
           var b = base();
           if (!b || !sid) return res(null);
@@ -52,6 +53,7 @@
               var d = j && (j.data || j);
               var loc = d && d.location;
               DIR = (loc && loc.directory) || d.directory || null;
+              DIR_SID = DIR ? sid : null;
               res(DIR);
             })
             .catch(function () { res(null); });
@@ -93,12 +95,25 @@
 
     function reveal(p) {
       if (p.indexOf("://") >= 0) return Promise.resolve(!1);
+      var raw = clean(p).replace(/(?::\d+){1,2}$/, "");
       return ensureDir().then(function (dir) {
         var abs = absPath(p, dir);
         if (!abs) return !1;
+        // 相对路径要交给主进程在「会话目录 + 各项目目录」里再找一遍（会话目录不一定就是文件所在仓库）
+        var rel = /^([A-Za-z]:[\\/]|\\\\|\/)/.test(raw) ? "" : raw;
+        var dirs = [];
+        try {
+          var m = globalThis.__ocRowMap$;
+          if (m && m.forEach) {
+            m.forEach(function (v) {
+              var s = v && v.session, d = s && s.location && s.location.directory;
+              if (d && dirs.indexOf(d) < 0) dirs.push(d);
+            });
+          }
+        } catch (e) { }
         try {
           if (window.electron && typeof window.electron.revealPath === "function") {
-            window.electron.revealPath({ path: abs, dir: dir || "" });
+            window.electron.revealPath({ path: abs, dir: dir || "", rel: rel, dirs: dirs.slice(0, 16) });
             return !0;
           }
         } catch (e) { }

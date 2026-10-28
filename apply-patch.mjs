@@ -246,20 +246,34 @@ const T_FILE_JS = fs.readFileSync(path.join(HERE, 'inject', 'file-reveal.js'), '
 
 // 主进程：加一个 oc:reveal-path IPC（用 shell.showItemInFolder，正好是「打开目录 + 选中文件」）
 // 不依赖打包后的压缩变量名：动态 import electron，内置模块走 process.getBuiltinModule。
+// 定位顺序（2026-10-28 加强：点了没反应最常见的三种原因都要兜住）：
+// ① 原样路径存在 → 直接选中；
+// ② 相对路径：依次在「会话目录 + 首页各行项目目录（dirs）」下拼 rel 试 existsSync（快，不做递归）；
+// ③ 只有文件名（编辑/写入卡片）：在会话目录里 globSync 同名文件；
+// ④ 还找不到：把最接近的目录用 openPath 打开当反馈（旧版直接 return false，表现就是「点了没反应」）。
 const MAIN_REVEAL_JS = ';import("electron").then(function(m){try{m.ipcMain.handle("oc:reveal-path",' +
   'function(e,t){try{' +
-    'var o=(t&&typeof t==="object")?t:{path:t},p=o.path,root=o.dir;' +
+    'var o=(t&&typeof t==="object")?t:{path:t},p=o.path,root=o.dir,rel=o.rel,ds=o.dirs;' +
     'if(typeof p!=="string"||!p)return!1;' +
     'var gm=(typeof process!=="undefined"&&typeof process.getBuiltinModule==="function")?process.getBuiltinModule.bind(process):null;' +
     'var fs=gm?gm("node:fs"):null,pa=gm?gm("node:path"):null;' +
-    // 文件不存在时：优先在会话目录里递归找同名文件（编辑文件卡片只显示文件名）
-    'if(fs&&pa&&!fs.existsSync(p)){' +
-      'var d=(root&&fs.existsSync(root))?root:pa.dirname(p),b=pa.basename(p);' +
-      'try{var g=fs.globSync("**/"+b,{cwd:d});if(g&&g.length)p=pa.join(d,g[0])}catch(x){}' +
+    'function ex(q){try{return !!(fs&&q&&fs.existsSync(q))}catch(x){return !1}}' +
+    'if(fs&&pa){' +
+      'if(!ex(p)&&typeof rel==="string"&&rel){' +
+        'var cs=[],i;if(root)cs.push(root);' +
+        'if(ds&&ds.length)for(i=0;i<ds.length;i++)if(cs.indexOf(ds[i])<0)cs.push(ds[i]);' +
+        'for(i=0;i<cs.length;i++){var q2=pa.join(cs[i],rel);if(ex(q2)){p=q2;break}}' +
+        'if(!ex(p)&&root){var b0=pa.basename(p);try{var g=fs.globSync("**/"+b0,{cwd:root});if(g&&g.length)p=pa.join(root,g[0])}catch(x){}}' +
+      '}' +
+      'if(!ex(p)&&root&&pa.basename(p)){try{var g2=fs.globSync("**/"+pa.basename(p),{cwd:root});if(g2&&g2.length)p=pa.join(root,g2[0])}catch(x){}}' +
+      'if(!ex(p)){' +
+        'var dd=ex(root)?root:(ex(pa.dirname(p))?pa.dirname(p):null);' +
+        'if(dd){try{m.shell.openPath(dd)}catch(x){}}' +
+        'return !1' +
+      '}' +
     '}' +
-    'if(fs&&!fs.existsSync(p))return!1;' +
-    'm.shell.showItemInFolder(p);return!0' +
-  '}catch(x){return!1}})}catch(x){}});';
+    'm.shell.showItemInFolder(p);return !0' +
+  '}catch(x){return !1}})}catch(x){}});';
 
 // 2.2.0：main chunk 的 minified 名字又换了一轮 —— 行按钮开关 f8→fBt（同一声明里还多了 mBt/hBt/gBt）、
 // 组件挂载 F→M（`M(Comp,{...})`，`L(parent,child)`）、图标组件 VP→VG、右键菜单 W4.Item→J$.Item、
