@@ -141,6 +141,8 @@ if (process.argv.includes('--static')) {
     ['文件定位 · 启动标记 __ocFileBoot$', anyChunk('__ocFileBoot$')],
     ['速度按会话隔离 · LIVE_BY 按 sid 分桶', anyChunk('LIVE_BY')],
     ['正文宽度 · 拖拽手柄 data-oc-width-grip', anyChunk('data-oc-width-grip')],
+    ['正文宽度 · 常驻竖线 data-oc-grip-line', anyChunk('data-oc-grip-line')],
+    ['正文宽度 · 宽度气泡 data-oc-grip-chip', anyChunk('data-oc-grip-chip')],
     ['正文宽度 · 持久化键 oc-read-width', anyChunk('oc-read-width')],
     ['文件定位 · preload 暴露 revealPath', (others['/out/preload/index.cjs'] || '').includes('oc:reveal-path')],
     ['文件定位 · 主进程 IPC oc:reveal-path', (others['/out/main/index.js'] || '').includes('oc:reveal-path')],

@@ -819,7 +819,7 @@
 
     // ---------- 正文宽度拖拽（参考 pi-desktop：正文右缘悬停变水平缩放光标，左右拖调宽） ----------
     var RW_KEY = 'oc-read-width';
-    var rwState = { grip: null, w: 0, dragging: false, baseX: 0, baseW: 0 };
+    var rwState = { grip: null, chip: null, w: 0, dragging: false, baseX: 0, baseW: 0 };
     var rwTargets = function () { return document.querySelectorAll('[class*="max-w-session"]'); };
     var rwTarget = function () {
       var els = rwTargets();
@@ -838,14 +838,14 @@
       var g = rwState.grip;
       if (!g) return;
       var els = rwTargets();
-      if (!els.length) { if (g.style.display !== 'none') g.style.display = 'none'; return; }
+      if (!els.length) { if (g.style.display !== 'none') g.style.display = 'none'; if (rwState.chip) rwState.chip.style.display = 'none'; return; }
       var r = els[0].getBoundingClientRect();
       // 列是居中的，水平位置对所有 turn 都一样；垂直滚动不影响 left
       var ok = r.width > 0 && r.right > 0 && r.right < window.innerWidth + 2;
-      if (!ok) { if (g.style.display !== 'none') g.style.display = 'none'; return; }
-      if (g.style.display !== 'block') g.style.display = 'block';
-      var left = Math.round(r.right - 5);
-      var top = Math.round(Math.max(72, window.innerHeight * 0.34));
+      if (!ok) { if (g.style.display !== 'none') g.style.display = 'none'; if (rwState.chip) rwState.chip.style.display = 'none'; return; }
+      if (g.style.display !== 'flex') g.style.display = 'flex';
+      var left = Math.round(r.right - 8);
+      var top = Math.round(Math.max(72, (window.innerHeight - 190) / 2));
       if (g.dataset.left !== String(left)) { g.style.left = left + 'px'; g.dataset.left = String(left); }
       if (g.dataset.top !== String(top)) { g.style.top = top + 'px'; g.dataset.top = String(top); }
     };
@@ -853,10 +853,32 @@
       if (rwState.grip) return;
       var g = document.createElement('div');
       g.setAttribute('data-oc-width-grip', '1');
-      g.style.cssText = 'position:fixed;display:block;width:10px;height:132px;z-index:80;cursor:col-resize;border-radius:5px;background:transparent;transition:background .12s ease;user-select:none;touch-action:none';
+      g.style.cssText = 'position:fixed;display:flex;align-items:center;justify-content:center;width:16px;height:190px;z-index:80;cursor:col-resize;background:transparent;user-select:none;touch-action:none';
+      // 常驻一条淡竖线（之前整条 10px 是透明的，悬停才显色 —— 老板根本看不见手柄在哪）
+      var line = document.createElement('div');
+      line.setAttribute('data-oc-grip-line', '1');
+      line.style.cssText = 'width:3px;height:100%;border-radius:3px;background:rgba(150,150,150,.22);transition:background .12s ease,width .12s ease';
+      g.appendChild(line);
+      var chip = document.createElement('div');
+      chip.setAttribute('data-oc-grip-chip', '1');
+      chip.style.cssText = 'position:fixed;display:none;z-index:81;padding:2px 7px;border-radius:6px;font-size:11px;line-height:16px;font-variant-numeric:tabular-nums;white-space:nowrap;background:rgba(55,55,55,.95);color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.35)';
       g.title = '拖动调整正文宽度（双击恢复默认）';
-      g.addEventListener('mouseenter', function () { g.style.background = 'rgba(128,128,128,.35)'; });
-      g.addEventListener('mouseleave', function () { if (!rwState.dragging) g.style.background = 'transparent'; });
+      var rwHot = function (on) {
+        line.style.width = on ? '4px' : '3px';
+        line.style.background = on ? 'rgba(150,150,150,.62)' : 'rgba(150,150,150,.22)';
+      };
+      var rwChip = function (show, txt, clientY) {
+        if (!show) { chip.style.display = 'none'; return; }
+        chip.textContent = txt;
+        chip.style.display = 'block';
+        var gr = g.getBoundingClientRect();
+        var cw = chip.offsetWidth || 60;
+        chip.style.left = Math.max(8, Math.round(gr.left + gr.width / 2 - cw / 2)) + 'px';
+        var top = (clientY || gr.top + gr.height / 2) - 30;
+        chip.style.top = Math.max(8, Math.round(top)) + 'px';
+      };
+      g.addEventListener('mouseenter', function () { rwHot(true); });
+      g.addEventListener('mouseleave', function () { if (!rwState.dragging) rwHot(false); });
       g.addEventListener('pointerdown', function (e) {
         var t = rwTarget();
         if (!t) return;
@@ -867,7 +889,8 @@
         try { g.setPointerCapture(e.pointerId); } catch (err) { }
         document.body.style.cursor = 'col-resize';
         document.body.style.userSelect = 'none';
-        g.style.background = 'rgba(128,128,128,.5)';
+        rwHot(true);
+        rwChip(true, (rwState.baseW || 1000) + 'px', e.clientY);
       });
       g.addEventListener('pointermove', function (e) {
         if (!rwState.dragging) return;
@@ -875,13 +898,15 @@
         // 正文列是 mx-auto 居中：右缘每拖动 1px，宽度变化 2px（左右各扩 1px），手感才跟手
         rwApply(rwState.baseW + (e.clientX - rwState.baseX) * 2);
         rwPlace();
+        rwChip(true, rwState.w + 'px', e.clientY);
       });
       var rwEnd = function () {
         if (!rwState.dragging) return;
         rwState.dragging = false;
         document.body.style.cursor = '';
         document.body.style.userSelect = '';
-        g.style.background = 'transparent';
+        rwHot(false);
+        rwChip(false);
       };
       g.addEventListener('pointerup', rwEnd);
       g.addEventListener('pointercancel', rwEnd);
@@ -894,7 +919,9 @@
         rwPlace();
       });
       (document.body || document.documentElement).appendChild(g);
+      (document.body || document.documentElement).appendChild(chip);
       rwState.grip = g;
+      rwState.chip = chip;
       var saved = 0;
       try { saved = parseInt(localStorage.getItem(RW_KEY) || '0', 10) || 0; } catch (e) { }
       if (saved) rwApply(saved);
