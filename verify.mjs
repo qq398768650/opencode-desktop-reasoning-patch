@@ -140,6 +140,8 @@ if (process.argv.includes('--static')) {
     ['时间显示 · 上下文上限按 model id 缓存 __ocCtxLimits$', anyChunk('__ocCtxLimits$')],
     ['文件定位 · 启动标记 __ocFileBoot$', anyChunk('__ocFileBoot$')],
     ['速度按会话隔离 · LIVE_BY 按 sid 分桶', anyChunk('LIVE_BY')],
+    ['速度口径 · 每轮实测平均 ST.lastTurn', anyChunk('ST.lastTurn')],
+    ['速度口径 · 本轮累计字符 dL.ch', anyChunk('dL.ch')],
     ['正文宽度 · 拖拽手柄 data-oc-width-grip', anyChunk('data-oc-width-grip')],
     ['正文宽度 · 常驻竖线 data-oc-grip-line', anyChunk('data-oc-grip-line')],
     ['正文宽度 · 宽度气泡 data-oc-grip-chip', anyChunk('data-oc-grip-chip')],
@@ -228,8 +230,11 @@ if (process.argv.includes('--time')) {
   const okTps = onHome ? true : (out.speedBoot && out.speedEl > 0 && out.tpsWrap);
   const sl = out.statsLayout;
   const okLayout = onHome ? true : (!!sl && sl.display === 'flex' && sl.centered && sl.gaps.length >= 2 && sl.gaps.every((g) => g >= 16));
-  const ok = out.boot && okHome && okMsg && okTps && okLayout;
+  // 速度口径必须是「每轮实测平均」（title 里带「本轮 XXX tok / Y 秒」），不能回退成会话累计
+  const okTurn = onHome ? true : (!out.tpsTitle ? true : /本轮/.test(out.tpsTitle));
+  const ok = out.boot && okHome && okMsg && okTps && okLayout && okTurn;
   if (sl) console.log(`统计行布局: display=${sl.display} gap=${sl.gap} 实际间距=[${sl.gaps}] 左/右留白=${sl.leftPad}/${sl.rightPad} 居中=${sl.centered}`);
+  console.log(`速度口径: ${out.speedText.trim()} | ${out.tpsTitle}`);
   console.log(ok ? '✅ 时间/速度补丁已生效（首页活跃时间 / 回复完成时间 / 统计行 tok/s 且间距居中）' : '❌ 时间/速度补丁没生效（见上面字段）');
   process.exit(ok ? 0 : 3);
 }

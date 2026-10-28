@@ -86,7 +86,7 @@
       fetch(b + '/api/session/' + sid + '/message?limit=200').then(function (r) { return r.json(); }).then(function (j) {
         var a = Array.isArray(j) ? j : ((j && (j.data || j.messages)) || []);
         var turns = 0, steps = 0, oTok = 0, decMs = 0, llmMs = 0, lastCtx = 0, firstAt = 0, lastAt = 0;
-        var txtCh = 0, toolCh = 0;
+        var txtCh = 0, toolCh = 0, lastTurn = null;
         for (var i = 0; i < a.length; i++) {
           var m = a[i];
           if (!m || !m.id || !m.time) continue;
@@ -131,6 +131,15 @@
               var stepMs = Math.max(0, m.time.completed - m.time.created);
               llmMs += stepMs;
               decMs += stepMs;
+              // 每轮实测平均：这一轮（一个 assistant message）的 output+reasoning ÷ 这一轮真实墙钟
+              // 老板要「以实际为准，取每轮的平均」，不要会话累计、也不要滑窗估算
+              var stepTok = (tk.output || 0) + (tk.reasoning || 0);
+              if (stepMs > 0 && stepTok > 0) {
+                var tps = stepTok * 1000 / stepMs;
+                if (!lastTurn || m.time.completed >= lastTurn.at) {
+                  lastTurn = { tps: Math.round(tps), tok: stepTok, ms: stepMs, at: m.time.completed };
+                }
+              }
             }
           }
         }
@@ -150,6 +159,7 @@
         ST.toolCh = toolCh;
         ST.spanMs = firstAt && lastAt && lastAt > firstAt ? lastAt - firstAt : 0;
         ST.lastAt = lastAt;
+        ST.lastTurn = lastTurn;
         }
         loadSess(sid, function () { paintAll(); });
         then && then();
@@ -511,7 +521,8 @@
     var D = [];
     // 按会话分桶：一个会话没在跑，就绝不能显示另一个会话正在输出的速度（老板实测「没运行却显示别的会话速度」）
     var LIVE_BY = Object.create(null);
-    var liveFor = function (sid) { var k = sid || ''; return LIVE_BY[k] || (LIVE_BY[k] = { v: 0, last: 0 }); };
+    // 除了 2 秒滑窗（v/last），还记本轮起点 t0 与累计字符 ch，用来算「本轮平均」
+    var liveFor = function (sid) { var k = sid || ''; return LIVE_BY[k] || (LIVE_BY[k] = { v: 0, last: 0, t0: 0, ch: 0, mid: '', at: 0 }); };
     var sameSid = function (rec, cur) {
       if (!rec) return false;
       if (rec.sid) return rec.sid === cur;
@@ -567,27 +578,45 @@
       }
       while (D.length && D[0].t < now - 8000) D.shift();
       var live = !!sum && now - last <= IDLE;
-      var val = 0, isAvg = false;
+      var val = 0, kind = 'none', tok = 0, sec = 0;
       if (live) {
         var span = Math.min(WIN, now - oldest);
         if (span < 1000) span = 1000;
         var raw = sum / span * 1000 * kAdj();
         // 指数平滑（新值 0.4）：滑窗在输出不均匀时会大幅摆动，直接显示像乱码
         L.v = L.v > 0 ? L.v * (1 - ALPHA) + raw * ALPHA : raw;
-        val = Math.round(L.v);
-        L.last = val;
+        L.last = Math.round(L.v);
+        // 本轮平均（老板要的口径）：这一轮从第一个 delta 到现在的「已输出 token ÷ 已用秒数」，
+        // 中途调工具的等待也算在分母里 —— 这就是「以实际为准」的每轮平均，不再用 2 秒滑窗当显示值
+        if (L.t0 && L.ch > 0) {
+          sec = Math.max(0.6, (now - L.t0) / 1000);
+          tok = Math.round(L.ch * kAdj());
+          if (tok > 0) { val = Math.max(1, Math.round(tok / sec)); kind = 'turn-live'; }
+        }
+        if (!val) { val = L.last; kind = 'live'; }
       } else {
-        // 没在输出：优先落回「这个会话自己的」平均速度（Σoutput / Σ有正文模型步的墙钟）；
-        // ST 还没切到当前会话时宁可空着，也不能拿上一个会话的平均值顶替
-        if (ST.sid && ST.sid === cur) { val = avgTps(); isAvg = val > 0; }
-        if (!val) val = L.last;
+        // 没在输出：落回「这个会话最后一轮」的实测平均（output+reasoning ÷ 该轮真实墙钟）
+        if (ST.sid && ST.sid === cur) {
+          if (ST.lastTurn && ST.lastTurn.tps > 0) {
+            val = ST.lastTurn.tps; tok = ST.lastTurn.tok; sec = ST.lastTurn.ms / 1000; kind = 'turn';
+          } else {
+            val = avgTps(); kind = val > 0 ? 'avg' : 'none';
+          }
+        }
+        if (!val) { val = L.last; kind = 'last'; }
       }
       // 同理用 visibility 保宽：tok/s 一消失第一块就变窄，居中布局会让整行左右横跳
       if (!val) { wrap.style.visibility = 'hidden'; return; }
       wrap.style.visibility = '';
       var txt = String(val);
       if (s.textContent !== txt) s.textContent = txt;
-      wrap.setAttribute('title', live ? '实时输出速度（2 秒滑窗，平滑 0.4）' : (isAvg ? '本会话平均输出速度' : '最后一次输出的实时速度（已停止输出）'));
+      var title;
+      if (kind === 'turn-live') title = '本轮平均输出速度（实时估算：约 ' + tok + ' tok / ' + sec.toFixed(1) + ' 秒）';
+      else if (kind === 'turn') title = '本轮实测平均（' + tok + ' tok / ' + sec.toFixed(1) + ' 秒）';
+      else if (kind === 'avg') title = '本会话平均输出速度（Σoutput ÷ Σ每轮耗时）';
+      else if (kind === 'live') title = '实时输出速度（2 秒滑窗）';
+      else title = '最后一次输出的实时速度（已停止输出）';
+      wrap.setAttribute('title', title);
     };
 
     var connect = function () {
@@ -615,7 +644,14 @@
               if (!dd) continue;
               if ((ev.type === 'session.text.delta' || ev.type === 'session.reasoning.delta') && dd.delta && dd.assistantMessageID) {
                 // sid 必须一起记：SSE 是全进程的，别的会话的 delta 也会进来
-                D.push({ t: performance.now(), n: dd.delta.length, mid: dd.assistantMessageID, sid: dd.sessionID || (OWN && OWN.get(dd.assistantMessageID)) || '' });
+                var dSid = dd.sessionID || (OWN && OWN.get(dd.assistantMessageID)) || '';
+                var dNow = performance.now();
+                D.push({ t: dNow, n: dd.delta.length, mid: dd.assistantMessageID, sid: dSid });
+                // 本轮平均速度：同一 assistant message 记首个 delta 时间与累计字符；换消息即新的一轮
+                var dL = liveFor(dSid);
+                if (dL.mid !== dd.assistantMessageID) { dL.mid = dd.assistantMessageID; dL.t0 = dNow; dL.ch = 0; dL.at = dNow; }
+                dL.ch += dd.delta.length;
+                dL.at = dNow;
                 paintSpeed();
               } else if (ev.type === 'session.text.ended' || ev.type === 'session.step.ended' || ev.type === 'session.execution.succeeded') {
                 setTimeout(paintSpeed, 1400);
@@ -795,6 +831,7 @@
       if (stable && cur !== ST.sid && !BUSY[cur]) {
         // 真换会话：旧会话的数字立刻清掉，否则新会话会先显示上一条的轮数/步数，再变成空白、再变成新数（就是老板说的「消失出现」）
         LIVE.v = 0; LIVE.last = 0;
+        ST.lastTurn = null;
         // 面板里的轮数/步数/用量都是切会话那一刻的快照，留着只会显示上一个会话的数字
         try { closePanel(); } catch (e) { }
         ST.turns = 0; ST.steps = 0; ST.oTok = 0; ST.ctx = 0; ST.sess = null; ST.sessSid = ''; ST.sessAt = 0;
