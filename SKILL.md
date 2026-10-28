@@ -76,7 +76,7 @@ node apply-patch.mjs --out patched.asar
 
 `verify.mjs` 需要页面上有一个会话、且会话里有已完成的思考块。如果它报「没找到思考块」，让老板打开一个聊天再跑一次。
 
-不想开调试口时用静态校验：`node verify.mjs --static`（自动找安装目录，也可 `--asar <path>` 指定某个 asar）——直接检查 asar 里四组补丁的 20 个标记（renderer chunk 17 个 + preload 1 个 + 主进程 2 个），全在才退出码 0。
+不想开调试口时用静态校验：`node verify.mjs --static`（自动找安装目录，也可 `--asar <path>` 指定某个 asar）——直接检查 asar 里四组补丁的 30 个标记（renderer chunk 27 个 + preload 1 个 + 主进程 2 个），全在才退出码 0。
 
 删除/多选补丁的行为验证：`node verify.mjs --delete`（同样要桌面端带调试口）——检查首页行上有垃圾桶按钮、右下角悬浮条在、`__ocMultiEnter$`/`__ocRegRow$`/`__ocDeleteApi$` 三个全局钩子已注入。**需要先切到首页**（在会话视图里 `[data-session-id]` 为 0，会报失败）。它只做存在性检查，不会真删东西。
 
@@ -153,6 +153,7 @@ LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar
 
 ## 坑（务必记住）
 
+- **`--write` 重启后调试口不一定是 9222（2026-10-28 实测）**：9222 落进 Windows 保留区间或被残留进程占着时，`debug-port.mjs` 会挑 9223/9224……`verify.mjs` 自己会扫 9222–9400，但**手写 CDP 脚本别把端口写死**；`go-home-fast.mjs` 已改成自动扫。
 - **扫调试口不能串行 + 无超时**：9222/9223 可能被 Windows 保留区间或残留监听占住，TCP 能握手但永远不回 HTTP —— `curl --max-time 2` 要 2 秒才判定 000，不带 `AbortSignal` 的 `fetch` 直接挂死。2026-10-24 实测：桌面端起在 9224，`verify.mjs` 卡了 5 分钟一行输出没有。现在 `page()` 改成 `Promise.all` 并发探 179 个端口、每个 `AbortSignal.timeout(900)`，一轮最多 0.9 秒，命中就返回。
 - **2.1.4 起 `--delete` 必须在「主页」面板打开时跑（2026-10-24 实测）**：2.1.4 首页是左侧 `aria-label="主页"` 按钮打开的独立面板（`[data-slot="home-panel"]`），在会话视图里 `[data-session-id]` 和 `data-action="home-session-delete"` 都是 0，verify 一定报「删除补丁没生效」——这是假失败，别去改锚点。打开主页后只有**展开的项目**才渲染会话行（实测 `rows=1`、`home-session-delete:1`，hover 后按钮 `aria-label="删除"`、28×28、opacity 1）。`--time` 验首页活跃时间同理。
 - **`verify.mjs --time` 在首页会误判失败（2026-10-24 修）**：首页没有输入框，`[data-oc-stats]`（统计行）不存在，`speedEl`/`tpsWrap` 必为 0、布局必为 null → 明明首页活跃时间全有，却报「没生效」。现在按场景判定：首页（`rows>0 && !statsLayout`）只验 `[data-oc-home-time]`，速度与布局两项视为不适用；回到会话页再验完成时间 + 统计行。
@@ -243,7 +244,7 @@ node apply-patch.mjs --out patched.asar
 
 `verify.mjs` 需要页面上有一个会话、且会话里有已完成的思考块。如果它报「没找到思考块」，让老板打开一个聊天再跑一次。
 
-不想开调试口时用静态校验：`node verify.mjs --static`（自动找安装目录，也可 `--asar <path>` 指定某个 asar）——直接检查 asar 里四组补丁的 20 个标记（renderer chunk 17 个 + preload 1 个 + 主进程 2 个），全在才退出码 0。
+不想开调试口时用静态校验：`node verify.mjs --static`（自动找安装目录，也可 `--asar <path>` 指定某个 asar）——直接检查 asar 里四组补丁的 30 个标记（renderer chunk 27 个 + preload 1 个 + 主进程 2 个），全在才退出码 0。
 
 删除/多选补丁的行为验证：`node verify.mjs --delete`（同样要桌面端带调试口）——检查首页行上有垃圾桶按钮、右下角悬浮条在、`__ocMultiEnter$`/`__ocRegRow$`/`__ocDeleteApi$` 三个全局钩子已注入。**需要先切到首页**（在会话视图里 `[data-session-id]` 为 0，会报失败）。它只做存在性检查，不会真删东西。
 
@@ -320,6 +321,7 @@ LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar
 
 ## 坑（务必记住）
 
+- **`--write` 重启后调试口不一定是 9222（2026-10-28 实测）**：9222 落进 Windows 保留区间或被残留进程占着时，`debug-port.mjs` 会挑 9223/9224……`verify.mjs` 自己会扫 9222–9400，但**手写 CDP 脚本别把端口写死**；`go-home-fast.mjs` 已改成自动扫。
 - **扫调试口不能串行 + 无超时**：9222/9223 可能被 Windows 保留区间或残留监听占住，TCP 能握手但永远不回 HTTP —— `curl --max-time 2` 要 2 秒才判定 000，不带 `AbortSignal` 的 `fetch` 直接挂死。2026-10-24 实测：桌面端起在 9224，`verify.mjs` 卡了 5 分钟一行输出没有。现在 `page()` 改成 `Promise.all` 并发探 179 个端口、每个 `AbortSignal.timeout(900)`，一轮最多 0.9 秒，命中就返回。
 - **2.1.4 起 `--delete` 必须在「主页」面板打开时跑（2026-10-24 实测）**：2.1.4 首页是左侧 `aria-label="主页"` 按钮打开的独立面板（`[data-slot="home-panel"]`），在会话视图里 `[data-session-id]` 和 `data-action="home-session-delete"` 都是 0，verify 一定报「删除补丁没生效」——这是假失败，别去改锚点。打开主页后只有**展开的项目**才渲染会话行（实测 `rows=1`、`home-session-delete:1`，hover 后按钮 `aria-label="删除"`、28×28、opacity 1）。`--time` 验首页活跃时间同理。
 - **`verify.mjs --time` 在首页会误判失败（2026-10-24 修）**：首页没有输入框，`[data-oc-stats]`（统计行）不存在，`speedEl`/`tpsWrap` 必为 0、布局必为 null → 明明首页活跃时间全有，却报「没生效」。现在按场景判定：首页（`rows>0 && !statsLayout`）只验 `[data-oc-home-time]`，速度与布局两项视为不适用；回到会话页再验完成时间 + 统计行。
