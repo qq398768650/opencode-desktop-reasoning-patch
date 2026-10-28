@@ -87,6 +87,9 @@
         var a = Array.isArray(j) ? j : ((j && (j.data || j.messages)) || []);
         var turns = 0, steps = 0, oTok = 0, decMs = 0, llmMs = 0, lastCtx = 0, firstAt = 0, lastAt = 0;
         var txtCh = 0, toolCh = 0, lastTurn = null;
+        // 会话级 token/字符 比（只收 0.25~1.2 的干净样本）：实时估算要用它，
+        // 单轮的比会被 tool call 参数污染（实测同会话 0.27~3.17，差 12 倍 → 实时值乱跳）
+        var rcTok = 0, rcCh = 0;
         for (var i = 0; i < a.length; i++) {
           var m = a[i];
           if (!m || !m.id || !m.time) continue;
@@ -148,6 +151,10 @@
               if (genMs) { decMs += genMs; llmMs += genMs; oTok += stepTok; }
               if (stepMs >= 300 && stepTok > 0) {
                 var tps = stepTok * 1000 / stepMs;
+                if (ch >= 200) {
+                  var rr0 = stepTok / ch;
+                  if (rr0 >= 0.25 && rr0 <= 1.2) { rcTok += stepTok; rcCh += ch; }
+                }
                 // 10~800 tok/s 之外基本是残缺数据（part 被覆盖、整步被工具等待撑大），宁可不出这个数
                 if (tps >= 10 && tps <= 800 && (!lastTurn || m.time.completed >= lastTurn.at)) {
                   lastTurn = { tps: Math.round(tps), tok: stepTok, ms: stepMs, ch: ch, at: m.time.completed, est: !genMs };
@@ -173,6 +180,8 @@
         ST.spanMs = firstAt && lastAt && lastAt > firstAt ? lastAt - firstAt : 0;
         ST.lastAt = lastAt;
         ST.lastTurn = lastTurn;
+        ST.rcTok = rcTok;
+        ST.rcCh = rcCh;
         }
         loadSess(sid, function () { paintAll(); });
         then && then();
@@ -535,7 +544,7 @@
     // 按会话分桶：一个会话没在跑，就绝不能显示另一个会话正在输出的速度（老板实测「没运行却显示别的会话速度」）
     var LIVE_BY = Object.create(null);
     // 除了 2 秒滑窗（v/last），还记本轮起点 t0 与累计字符 ch，用来算「本轮平均」
-    var liveFor = function (sid) { var k = sid || ''; return LIVE_BY[k] || (LIVE_BY[k] = { v: 0, last: 0, t0: 0, ch: 0, mid: '', at: 0 }); };
+    var liveFor = function (sid) { var k = sid || ''; return LIVE_BY[k] || (LIVE_BY[k] = { v: 0, last: 0, t0: 0, ch: 0, mid: '', at: 0, tv: 0 }); };
     var sameSid = function (rec, cur) {
       if (!rec) return false;
       if (rec.sid) return rec.sid === cur;
@@ -599,14 +608,20 @@
         // 指数平滑（新值 0.4）：滑窗在输出不均匀时会大幅摆动，直接显示像乱码
         L.v = L.v > 0 ? L.v * (1 - ALPHA) + raw * ALPHA : raw;
         L.last = Math.round(L.v);
-        // 本轮平均（老板要的口径）：这一轮从第一个 delta 到现在的「已输出 token ÷ 已用秒数」，
-        // 中途调工具的等待也算在分母里 —— 这就是「以实际为准」的每轮平均，不再用 2 秒滑窗当显示值
+        // 本轮平均（老板要的口径）：这一轮从第一个 delta 到现在的「已输出 token ÷ 已用秒数」
         if (L.t0 && L.ch > 0) {
           sec = Math.max(0.6, (now - L.t0) / 1000);
-          // 本会话上一轮的「token ÷ 字符」比已知，就优先用它（各模型分词率差很多，全局比会把实时值算偏）
-          var ratio = ST.lastTurn && ST.lastTurn.ch > 50 ? ST.lastTurn.tok / ST.lastTurn.ch : kAdj();
+          // token/字符 比：优先用本会话的加权比（Σ干净轮次 tok / Σ字符），它比单轮稳、比全局比贴当前模型；
+          // 单轮的比会被 tool call 参数污染（实测同会话 0.27~3.17，差 12 倍 → 实时值忽高忽低）
+          var ratio = ST.rcCh > 500 ? ST.rcTok / ST.rcCh : kAdj();
+          if (!(ratio >= 0.25 && ratio <= 1.2)) ratio = 0.6;
           tok = Math.round(L.ch * ratio);
-          if (tok > 0) { val = Math.max(1, Math.round(tok / sec)); kind = 'turn-live'; }
+          if (tok > 0) {
+            // 实时值本身也要平滑：首秒字符少，1 个字符的误差就是几十 tok/s 的跳变
+            var rawTps = tok / sec;
+            L.tv = L.tv > 0 ? L.tv * 0.7 + rawTps * 0.3 : rawTps;
+            val = Math.max(1, Math.round(L.tv)); kind = 'turn-live';
+          }
         }
         if (!val) { val = L.last; kind = 'live'; }
       } else {
@@ -664,7 +679,7 @@
                 D.push({ t: dNow, n: dd.delta.length, mid: dd.assistantMessageID, sid: dSid });
                 // 本轮平均速度：同一 assistant message 记首个 delta 时间与累计字符；换消息即新的一轮
                 var dL = liveFor(dSid);
-                if (dL.mid !== dd.assistantMessageID) { dL.mid = dd.assistantMessageID; dL.t0 = dNow; dL.ch = 0; dL.at = dNow; }
+                if (dL.mid !== dd.assistantMessageID) { dL.mid = dd.assistantMessageID; dL.t0 = dNow; dL.ch = 0; dL.tv = 0; dL.at = dNow; }
                 dL.ch += dd.delta.length;
                 dL.at = dNow;
                 paintSpeed();
