@@ -563,15 +563,18 @@
         val = Math.round(LIVE.v);
         LIVE.last = val;
       } else {
-        // 输出结束不消失：钉住最后那一帧的实时值，既不归零也不拿平均值顶替
-        val = LIVE.last || 0;
+        // 输出结束不消失：钉住最后那一帧的实时值，既不归零也不拿平均值顶替；
+        // 但从没在本进程里输出过（刚启动桌面端 / 刚切会话，LIVE.last 被清零）时，
+        // 整块 tok/s 会 visibility:hidden —— 表现就是「看不到当前会话的速度」。
+        // 这时落回本会话平均速度（Σoutput / Σ有正文模型步的墙钟），重启后也有数。
+        val = LIVE.last || avgTps();
       }
       // 同理用 visibility 保宽：tok/s 一消失第一块就变窄，居中布局会让整行左右横跳
       if (!val) { wrap.style.visibility = 'hidden'; return; }
       wrap.style.visibility = '';
       var txt = String(val);
       if (s.textContent !== txt) s.textContent = txt;
-      wrap.setAttribute('title', live ? '实时输出速度（2 秒滑窗，平滑 0.4）' : '最后一次输出的实时速度（已停止输出）');
+      wrap.setAttribute('title', live ? '实时输出速度（2 秒滑窗，平滑 0.4）' : (LIVE.last ? '最后一次输出的实时速度（已停止输出）' : '本会话平均输出速度（还没有实时输出）'));
     };
 
     var connect = function () {
