@@ -198,6 +198,9 @@ const T_TIME_JS = fs.readFileSync(path.join(HERE, 'inject', 'time-stats.js'), 'u
 
 // 第四组：Ctrl+左键点会话里的文件路径 → 资源管理器打开所在目录并选中文件
 const T_FILE_JS = fs.readFileSync(path.join(HERE, 'inject', 'file-reveal.js'), 'utf8').trim();
+
+// 第五组：「工作中」这一行中间的 展开/收起 按钮（一键展开本轮全部思考/工具组）
+const T_WORK_JS = fs.readFileSync(path.join(HERE, 'inject', 'work-fold.js'), 'utf8').trim();
 // 右下角固定的「收起全部」悬浮按钮（只收思考块，跟着 __ocFoldQ$ 走，不随滚动）
 
 // 主进程：加一个 oc:reveal-path IPC（用 shell.showItemInFolder，正好是「打开目录 + 选中文件」）
@@ -241,7 +244,7 @@ const MAIN_REVEAL_JS = ';import("electron").then(function(m){try{m.ipcMain.handl
 // 代表消息取行内 `msg_` 前缀 part 中 `time.completed` 最大的那条（行上的 data-message-id 是用户消息 id，
 // 只有 time.created，拿它会一直不显示）。折叠组展开后 text-part-meta 会重新出现，此时走旧路径、跳过回退。
 const D_RULES = [
-  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 时间/用量/速度/会话统计 + 文件定位 + 收起全部', ',YBt=!1,XBt=500,ZBt=250,QBt=200,$Bt=[56,38,66,46,30,52];', ',YBt=!0,XBt=500,ZBt=250,QBt=200,$Bt=[56,38,66,46,30,52],' + D_TRASH_ICON + ';' + D_MULTI_JS + ';' + T_TIME_JS + ';' + T_FILE_JS + ';'],
+  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 时间/用量/速度/会话统计 + 文件定位 + 收起全部', ',YBt=!1,XBt=500,ZBt=250,QBt=200,$Bt=[56,38,66,46,30,52];', ',YBt=!0,XBt=500,ZBt=250,QBt=200,$Bt=[56,38,66,46,30,52],' + D_TRASH_ICON + ';' + D_MULTI_JS + ';' + T_TIME_JS + ';' + T_FILE_JS + ';' + T_WORK_JS + ';'],
   ['D2 tooltip 文案 归档→删除', 'get value(){return e.language.t(`common.archive`)}', 'get value(){return e.language.t(`common.delete`)}'],
   ['D3 动作标识 home-session-archive→delete', '`home-session-archive`', '`home-session-delete`'],
   ['D4 图标 归档→垃圾桶 + 注册行→会话映射', 'get icon(){return N(AG,{name:`archive`})}', 'get icon(){return globalThis.__ocRegRow$&&globalThis.__ocRegRow$(e.server,e.record.session),globalThis.__ocDeleteApi$=e.onDeleteSession,N(ZZ_TRASH_ICON,{})}'],
@@ -343,6 +346,8 @@ for (const [label, find, repl] of D_RULES) del = replaceOnce(del, find, repl, la
   if (!txt.includes('globalThis.__ocMultiEnter$')) throw new Error('补丁自检失败：多选删除入口没注入');
   if (!txt.includes('__ocRegRow$')) throw new Error('补丁自检失败：会话行→会话映射注册缺失');
   if (!txt.includes('data-oc-multi')) throw new Error('补丁自检失败：多选工具条没注入');
+  if (!txt.includes('__ocWorkFoldBoot$')) throw new Error('补丁自检失败：「工作中」展开/收起按钮没注入');
+  if (!txt.includes('data-oc-work-fold')) throw new Error('补丁自检失败：「工作中」展开/收起按钮的标记缺失');
 }
 jobs.push({ path: delPath, content: del, label: '首页删除按钮' });
 

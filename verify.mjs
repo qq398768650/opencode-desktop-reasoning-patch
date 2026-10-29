@@ -126,6 +126,8 @@ if (process.argv.includes('--static')) {
     ['时间显示 · 首页活跃时间 data-oc-home-time', anyChunk('data-oc-home-time')],
     ['时间显示 · 上下文上限按 model id 缓存 __ocCtxLimits$', anyChunk('__ocCtxLimits$')],
     ['文件定位 · 启动标记 __ocFileBoot$', anyChunk('__ocFileBoot$')],
+    ['工作中展开/收起 · 启动标记 __ocWorkFoldBoot$', anyChunk('__ocWorkFoldBoot$')],
+    ['工作中展开/收起 · 按钮 data-oc-work-fold', anyChunk('data-oc-work-fold')],
     ['速度按会话隔离 · LIVE_BY 按 sid 分桶', anyChunk('LIVE_BY')],
     ['速度口径 · 每轮实测平均 ST.lastTurn', anyChunk('ST.lastTurn')],
     ['速度口径 · 本轮累计字符 dL.ch', anyChunk('dL.ch')],
@@ -141,7 +143,7 @@ if (process.argv.includes('--static')) {
   console.log('asar:', asarPath, '(' + buf.length + ' 字节)');
   for (const [label, ok] of checks) console.log((ok ? '✅ ' : '❌ ') + label);
   const allOk = checks.every(([, ok]) => ok);
-  console.log(allOk ? '✅ 三组补丁标记齐全（结构静态校验通过）' : '❌ 有标记缺失：补丁没打上，或被打回了官方原版');
+  console.log(allOk ? '✅ 四组补丁标记齐全（结构静态校验通过）' : '❌ 有标记缺失：补丁没打上，或被打回了官方原版');
   process.exit(allOk ? 0 : 3);
 }
 

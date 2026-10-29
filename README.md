@@ -1,4 +1,4 @@
-# opencode 桌面端补丁（首页会话删除按钮 + 时间/速度显示 + 文件定位）
+# opencode 桌面端补丁（首页会话删除按钮 + 时间/速度显示 + 文件定位 + 工作中展开/收起）
 
 给 [opencode](https://opencode.ai) 桌面端（Electron）加三组官方没有的交互，脚本一次全部打上（思考折叠那组已移除）。
 
@@ -21,6 +21,14 @@
 **在会话里 `Ctrl + 左键`点文件路径 → 资源管理器打开所在目录并选中该文件**
 
 正文里的磁盘路径（`C:\a\b.ts`、`src/index.ts`、`apply-patch.mjs`，带 `:12` 行号也认）、编辑/写入文件卡片上的文件名都能点。Ctrl 按住悬停在路径上会变成手型；相对路径按当前会话的工作目录解析，目录里没有同名文件时再递归找一次。`http://` 之类的网页链接不接管。
+
+---
+
+## 五、「工作中」行展开 / 收起
+
+**「工作中」这一行中间有一个 `展开 ▾` / `收起 ▴` 胶囊按钮，一键把本轮所有思考与工具组全展开或全收起**
+
+2.2.x 把每轮的思考、工具调用都收进折叠组，想回顾细节得一个个点开。按钮只在**真的在工作**时出现（底部状态行有内容时；空闲时那行是空的，不插按钮），点击后文字跟着当前状态自动切换。
 
 ---
 
@@ -67,6 +75,16 @@
 | 5 | `http://` 之类的网页链接不接管，照旧是链接 |
 | 6 | 实现：preload 暴露 `revealPath` → 主进程 `ipcMain.handle("oc:reveal-path")` → `shell.showItemInFolder`；不改官方任何逻辑 |
 
+### 工作中展开 / 收起
+
+| # | 行为 |
+|---|---|
+| 1 | 助手正在工作时，底部「工作中」这行**正中间**出现 `展开 ▾` 胶囊按钮 |
+| 2 | 点一下把**本轮**所有已收起的思考块、工具调用组全部展开，按钮变成 `收起 ▴` |
+| 3 | 再点收起回默认状态；只影响当前这一轮，不碰历史轮次 |
+| 4 | 按钮只是点官方折叠组自己的 trigger（`aria-expanded` 是唯一状态源），不改官方任何逻辑 |
+| 5 | 工作结束、状态行空掉时按钮自动移除 |
+
 ---
 
 ## 环境要求
@@ -75,7 +93,7 @@
 - Node.js 18+
 - opencode 桌面端（Electron 版，安装目录下有 `resources\app.asar`）
 
-支持版本：**2.1.4**（2.1.3 / 2.1.2 / 2.1.1 / 2.0.32 / 2.0.29 的锚点写法不同，见文末版本对照表）。opencode 升级后 minified 代码会变，锚点失效时脚本会明确报错，需要按下面「升级后锚点找不到」更新。
+支持版本：**2.2.1**（2.1.4 / 2.1.3 / 2.1.2 / 2.1.1 / 2.0.32 / 2.0.29 的锚点写法不同，见文末版本对照表）。opencode 升级后 minified 代码会变，锚点失效时脚本会明确报错，需要按下面「升级后锚点找不到」更新。
 
 **发布约定：本仓库的 tag / GitHub Release 版本号 = 适配的 opencode 桌面端版本号**（如 `v2.1.3`）。补丁修复本身不单独升版本，发到同一个 tag 上——版本号只表示「这份脚本能直接打的 opencode 版本」。
 
@@ -140,6 +158,7 @@ node apply-patch.mjs --out patched.asar
 |---|---|
 | `apply-patch.mjs` | 主脚本：找安装目录 → 定位删除按钮 chunk（+ preload、主进程）→ 打三组补丁 → 重建 asar（含 dry-run / `--out` / `--write`） |
 | `inject/file-reveal.js` | 文件定位补丁的 renderer 注入源码（`apply-patch.mjs` 读进来内联，不单独部署） |
+| `inject/work-fold.js` | 「工作中」行展开/收起按钮的 renderer 注入源码（`apply-patch.mjs` 读进来内联，不单独部署） |
 | `restart.mjs` | 关掉再带 `--remote-debugging-port=<自动挑的端口>` 重开桌面端 |
 | `debug-port.mjs` | 挑调试口：读 Windows 的 TCP 保留端口区间 + `netstat` 占用，从 9222 往后找第一个可用的（`--port` / `OC_DEBUG_PORT` 可覆盖） |
 | `verify.mjs` | 走 CDP 检查折叠行为（`--delete` 查删除/多选补丁，`--time` 查时间补丁，`--static` 只查 asar 标记），PASS 时退出码 0 |
@@ -200,6 +219,14 @@ renderer 没有打开目录的能力（`window.electron` 只有 `windowID / boot
 | **F2 主进程** | `/out/main/index.js` 末尾追加 `import("electron").then(m => m.ipcMain.handle("oc:reveal-path", (e, t) => …))`：`t` 可以是字符串或 `{path, dir}`；文件不存在时用 `fs.globSync("**/"+basename, {cwd: dir || dirname(path)})` 找同名文件，还找不到返回 `false`；找到就 `shell.showItemInFolder(p)`（打开目录 + 选中）。用 `process.getBuiltinModule("node:fs")` 自取内置模块，不引用压缩后的单字母变量，升级不易失效 |
 | **F3 renderer** | `inject/file-reveal.js`（`T_FILE_JS`，跟着 D1 注入）。`mousemove`（capture）在 Ctrl 按住且指到路径上时给 `cursor:pointer`；`click`（capture）在 `ctrlKey && button===0` 时按优先级取路径：①`[data-slot="apply-patch-filename"]` ②`caretRangeFromPoint` + 正则取点击位置那个 token ③整块 `<code>` 文本；再 `absPath()`（去行号、认盘符/UNC/Unix、相对路径拼会话目录）后调 `revealPath({path, dir})` |
 
+### 「工作中」行展开 / 收起（不新增锚点，IIFE 跟着 D1 注入）
+
+| 标记 | 做什么 |
+|---|---|
+| **W1 定位** | 行 = `[data-timeline-row="bottom-spacer"]` 里有子节点的 `div.flex.h-9.items-center`（空闲时该行是空占位，不插）；「本轮」= 从最后一个 `[data-slot="session-turn-message-container"]` 往前第一个含 `[data-component="collapsed-tool-group"]` 的 turn |
+| **W2 动作** | 只 `click()` 官方 `button[data-slot="collapsible-trigger"]`，按各自 `aria-expanded` 判断该展开还是该收起；`aria-expanded` 是唯一状态源，不维护自己的 map |
+| **W3 摆放与重渲染** | 按钮绝对定位在行中心（`left:50%;top:50%;translate(-50%,-50%)`），`row.appendChild`；React 重渲染清掉后用 `MutationObserver`（120ms 节流）+ `setInterval(paint, 800)` 重插，句柄暴露为 `__ocWorkFoldTimer$` |
+
 会话目录来自 `ensureDir()`：先查 `__ocRowMap$`，没有再页面内 `fetch(/api/session/<sid>)` 取 `location.directory`（sid 从 `localStorage` 的 `last-active-url` 抠）。
 
 ---
@@ -255,6 +282,7 @@ opencode 升级后 minified 代码会变，脚本会报「锚点没找到」。�
 | 2.1.2 | `/out/renderer/assets/route-BKcp3psp.js`（359447 → 362699 B） | `/out/renderer/assets/main-CRF7GP33.js`（官方 1312199 → 1329556 B，含时间 + 实时速度 + 文件定位）；preload 838 → 893 B；main 819112 → 819775 B | 176359724 → 176381051 |
 | 2.1.3 | `/out/renderer/assets/route-D__rI7PP.js`（369421 → 372673 B） | `/out/renderer/assets/main-DomFRUsy.js`（官方 1312668 → 1351743 B，含时间 + 实时速度 + 文件定位）；preload 838 → 893 B；main 819130 → 819793 B | 178044242 → 178087287 |
 | 2.1.4 | `/out/renderer/assets/route-BCLDih8W.js`（380688 → 383940 B） | `/out/renderer/assets/main-BCYk92jp.js`（官方 1314097 → 1356046 B，含时间 + 实时速度 + 文件定位）；preload 838 → 893 B；main 819139 → 819802 B | 178068364 → 178114283 |
+| 2.2.1 | —（思考折叠补丁已移除） | `/out/renderer/assets/main-DwDHTs01.js`（官方 2447622 → 2518364 B，含时间 + 实时速度 + 文件定位 + 工作中展开/收起）；preload 832 → 887 B；main 55623 → 56796 B | 233357959 → 233429929 |
 
 ---
 
