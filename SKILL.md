@@ -175,7 +175,7 @@ LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar
 
 **验证**：会话里 `[data-component="collapsed-tool-group"]` 数量为 **0**，`[data-component="reasoning-part"]` 里 `button[aria-expanded="true"]`，且 reasoning 区块高度是全文高度（几百上千 px）而不是一行。
 
-**注意**：这是运行时数据不是补丁，`--restore` 不会动它；桌面端重置设置或换机后要重做一遍。
+**注意**：这是运行时数据不是补丁，`--restore` 不会动它；桌面端重置设置或换机后要重做一遍。**当前状态（2026-10-29）：老板试过全展开后主动要求改回官方默认 `grouped`，所以现在保持 grouped，本节只作为需要时的操作手册。**
 
 ## 坑（务必记住）
 
