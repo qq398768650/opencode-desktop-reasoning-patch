@@ -158,6 +158,25 @@ LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar
 
 **为什么不用 `aria-expanded` 之外的状态源**：官方 trigger 的 `aria-expanded` 是唯一可靠的开合真相，自己的 map 会和 React 打架。
 
+### 六、让会话默认展开（改的是设置，不是代码）
+
+老板要求「会话默认展开」时不用动 chunk——官方 2.2.x 自带的「时间线详情」设置就是干这个的。
+
+| 项 | 值 |
+|---|---|
+| 存储 | `C:\Users\JS\AppData\Roaming\ai.opencode.desktop\drafts.sqlite` → 表 `state`，`name='default.dat'`，`key='settings.v3'` |
+| 字段 | JSON 里的 `general.timelineDetail.{shell,edit,thinking,subagents,notices,tools,commentary}` |
+| `placement` | `separate`（不归组、独立铺开）/ `grouped`（塞进 `collapsed-tool-group`，整体折叠）/ `hidden` |
+| `details` | `collapsed` / `expanded` |
+
+**默认全展开 = 七项全 `placement:'separate'`**（`shell`/`edit`/`thinking` 再加 `details:'expanded'`），等同于设置面板里的「everything」预设。默认的 `grouped` 就是「思考折成一行、点开才看得到」的根因，跟 `details:'expanded'` 无关——`details` 只管组内条目，组本身由 `placement` 决定。
+
+**改法**：先 `taskkill /IM OpenCode.exe /F` 等它退干净 → 用 `node:sqlite` 的 `DatabaseSync` 读改写 → 再启动。进程退出时会把内存里的旧设置回写，所以顺序不能反。
+
+**验证**：会话里 `[data-component="collapsed-tool-group"]` 数量为 **0**，`[data-component="reasoning-part"]` 里 `button[aria-expanded="true"]`，且 reasoning 区块高度是全文高度（几百上千 px）而不是一行。
+
+**注意**：这是运行时数据不是补丁，`--restore` 不会动它；桌面端重置设置或换机后要重做一遍。
+
 ## 坑（务必记住）
 
 - **`window.electron` 是 contextBridge 冻结对象，hook 不了（2026-10-28 实测）**：想验证 ctrl+click 有没有调到主进程，别写 `window.electron.revealPath = ...` 记录日志——`Object.isFrozen(window.electron) === true`，赋值静默失效，`String(window.electron.revealPath)` 永远是 `function () { [native code] }`，最后会误判成「handler 没跑」。直接测 `window.electron.revealPath({path, dir, rel, dirs}).then(r=>r)` 的返回值（`true` = 找到并已选中，`false` = 没找到、此时主进程会打开目录）。

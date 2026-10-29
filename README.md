@@ -32,6 +32,18 @@
 
 ---
 
+## 六、会话默认展开（改的是设置，不是补丁代码）
+
+**打开任何会话，思考块和工具调用默认就是铺开的，不用点。**
+
+这是官方「时间线详情」设置的能力，存在桌面端自己的 `drafts.sqlite` 里（`state` 表 → `name='default.dat'`、`key='settings.v3'` → `general.timelineDetail`）。把七个 section 的 `placement` 全改成 `separate`（`shell`/`edit`/`thinking` 再加 `details:'expanded'`）就是设置面板里的「everything」预设；默认的 `grouped` 才是「思考折成一行」的根因。
+
+改法：先完全退出桌面端（退出时会把内存里的旧设置回写），再用 `node:sqlite` 改库、再启动。验证方式：会话里 `[data-component="collapsed-tool-group"]` 数量为 0。
+
+注意：这是运行时数据，`--restore` 不会还原它；桌面端重置设置后会回到 `grouped`，需要重做。切到默认展开后没有折叠组，「工作中」行的按钮自然也不会出现。
+
+---
+
 ## 效果
 
 ### 思考折叠（已移除）
