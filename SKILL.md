@@ -90,7 +90,7 @@ LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar
 | P4 | 摘掉 `get open()` 里 `?? (timelineDetail.thinking.details === 'expanded' : void 0)` 这个兜底 —— 就是它让每个思考块默认恒为展开 |
 | P8 | `onOpenChange` 把用户的开合状态记进 `_rx$`（流式期间的 spurious `true` 不记），并把 `open` 写进本地 store 做即时反馈 |
 | P2 | 底部加「收起 ▴」按钮、根节点加双击空白收起；**不做逐块自动折叠**（`_want$=()=>!1`，2026-10-28 按老板要求改：单块折来折去屏幕一直在跳）。`__ocFoldQ$` / `__ocFoldScan$` / MutationObserver 的结构保留但永远不触发，只为兼容老路径。真正的「收起来」由 `inject/fold-all.js` 在**每轮回复完成时统一做一次**。**折叠时做滚动锚定**（`_anchor$`）：折叠前记下本块相对视口的位置，折叠后按差值补偿滚动容器的 `scrollTop`（块完全滚到视口上方时用底边做锚点，否则用顶边），否则翻历史时块一收，视口就被带偏；补偿要放在 `queueMicrotask` 里再补一次（微任务在渲染前执行，先画错位再补会闪一帧），`rAF` 只做兜底，且节点已卸载（`!n.isConnected`）时直接跳过 |
-| P2b（`inject/fold-all.js`） | 右下角 `position:fixed` 的「收起全部 N 项 ▴」按钮，**固定不随内容滚动**。每 800ms/滚动/ DOM 变化重算「展开中的 `[data-component=reasoning-part]`」数量（高度 > 48px 算展开），0 个就隐藏。点击时**每次重新查 DOM 收最后一个展开块**（React 重渲染会让旧元素引用失效，一次性拿数组遍历只能收掉前几个 —— 踩过）。另有一个 600ms 轮询 `__ocMsgTime$`（限定当前 sid）取最大 `completed`，变大即「本轮回复结束」，自动收一次 |
+| P2b（`inject/fold-all.js`） | 右下角 `position:fixed` 的「收起全部 N 组 ▴ / 展开全部 N 组 ▾」按钮，**固定不随内容滚动**。操作对象是官方 timeline 分组容器 `[data-component=collapsed-tool-group]`（老板要把设置里「分组」开着、「折叠」关着，此时一轮的 Shell/编辑/思考就是标题行「使用了 N 个 Shell、编辑…」），点它一次把这个组点开、里面所有块就能正常滚；再点一次全部收回。开合判断读 `[aria-expanded]`，点击目标是 `[data-slot=collapsible-trigger]`。**必须异步逐个点**（`step(fold,k)` 每次 `setTimeout 150ms`）——React setState 要等事件循环，同步 while 里 DOM 还没更新，`isOpen()` 永远读到旧值，只能收掉第一个（踩过：click2 后 open 仍是 1）。另有一个 600ms 轮询 `__ocMsgTime$`（限定当前 sid）取最大 `completed`，变大即「本轮回复结束」，自动收一次；首次拿到数据只当基准不算结束（否则启动后数据回填会把刚展开的组立刻收掉） |
 
 ### 二、首页会话删除按钮（目标 chunk：含 `e.onArchiveSession(e.record.session)` 的 `main-*.js`，脚本自动找）
 

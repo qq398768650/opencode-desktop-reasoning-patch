@@ -3,37 +3,46 @@
     if (globalThis.__ocFoldAllBoot$) return;
     globalThis.__ocFoldAllBoot$ = !0;
 
-    // 固定在右下角，不随内容滚动（position:fixed 不受滚动容器影响）。
-    // 不收 __ocFoldQ$ —— 那张表只留「还没被自动折叠处理过」的块（自适应扫描会 splice 掉），
-    // 拿它做「全部」只会收掉几个。直接扫 DOM 上的 reasoning-part。
+    // 官方 timeline 的「分组」开关打开后，一轮里的 Shell/编辑/思考会合成一个
+    // [data-component=collapsed-tool-group]，标题就是「使用了 N 个 Shell、编辑…」。
+    // 补丁的「打开折叠」= 把这个组点开，里面的块就能正常滚；底部按钮负责一键收回。
     var ID = 'oc-fold-all-btn';
-    var PART = '[data-component=reasoning-part]';
+    var GROUP = '[data-component=collapsed-tool-group]';
     var btn = null;
 
-    // 折叠后块只有一行（实测 28px），展开是几百 px
-    function isOpen(el) {
-      try { return el.getBoundingClientRect().height > 48; } catch (e) { return false; }
+    function groups() {
+      return [].slice.call(document.querySelectorAll(GROUP));
     }
 
-    function openParts() {
-      var out = [], ps = document.querySelectorAll(PART), i;
-      for (i = 0; i < ps.length; i++) if (isOpen(ps[i])) out.push(ps[i]);
-      return out;
+    function isOpen(g) {
+      var t = g.querySelector('[aria-expanded]');
+      return !!t && t.getAttribute('aria-expanded') === 'true';
     }
 
-    function foldAll() {
-      // 每次点击都会让 React 重渲染、旧 DOM 引用失效，所以每轮重新查一遍，
-      // 且只收「最后一个展开的块」——从下往上收，上方内容不动。
-      var guard = openParts().length + 5;
-      while (guard-- > 0) {
-        var ps = openParts();
-        if (!ps.length) break;
-        var el = ps[ps.length - 1];
-        var f = el.querySelector('[data-reasoning-collapse]');
-        if (!f) break;
-        try { f.click(); } catch (e) { }
-        if (isOpen(el)) break;   // 收不动（流式中），停手别死循环
-      }
+    function trigger(g) {
+      return g.querySelector('[data-slot=collapsible-trigger]') || g.querySelector('[aria-expanded]');
+    }
+
+    function setOpen(g, want) {
+      if (isOpen(g) === want) return true;
+      var t = trigger(g);
+      if (!t) return false;
+      try { t.click(); } catch (e) { return false; }
+      return true;
+    }
+
+    // React 的 setState 要等事件循环，同步 while 里 DOM 还没更新，
+    // 所以一次只点一个，150ms 后再看下一个。
+    function foldAll() { step(true, 0); }
+    function openAll() { step(false, 0); }
+
+    function step(fold, k) {
+      var gs = groups();
+      if (k > gs.length + 3) return;
+      var target = fold ? gs.filter(isOpen).pop() : gs.filter(function (g) { return !isOpen(g); })[0];
+      if (!target) return;
+      if (!setOpen(target, !fold)) return;
+      setTimeout(function () { step(fold, k + 1); }, 150);
     }
 
     function make() {
@@ -48,7 +57,7 @@
       b.addEventListener('click', function (ev) {
         ev.preventDefault();
         ev.stopPropagation();
-        foldAll();
+        if (groups().some(isOpen)) foldAll(); else openAll();
         setTimeout(refresh, 60);
       });
       document.body.appendChild(b);
@@ -56,10 +65,12 @@
     }
 
     function refresh() {
-      var n = openParts().length;
+      var gs = groups();
+      var n = gs.filter(isOpen).length;
       if (!btn || !document.body.contains(btn)) btn = make();
-      btn.style.display = n ? '' : 'none';
-      if (n) btn.textContent = '收起全部 ' + n + ' 项 ▴';
+      if (!gs.length) { btn.style.display = 'none'; return 0; }
+      btn.style.display = '';
+      btn.textContent = n ? '收起全部 ' + n + ' 组 ▴' : '展开全部 ' + gs.length + ' 组 ▾';
       return n;
     }
 
@@ -93,9 +104,11 @@
     var lastDone = latestDone();
     setInterval(function () {
       var d = latestDone();
+      // 启动时 __ocMsgTime$ 可能还没数据（lastDone=0），第一次拿到值只做基准，不算「刚结束一轮」
+      if (!lastDone) { lastDone = d; return; }
       if (d > lastDone) {
         lastDone = d;
-        if (openParts().length) foldAll();
+        if (groups().some(isOpen)) foldAll();
       }
     }, 600);
 
