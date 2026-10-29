@@ -59,28 +59,21 @@ async function evalIn(page, expr) {
 }
 
 const PROBE = `(() => {
-  const pick = () => [...document.querySelectorAll('[data-timeline-part-id]')].filter(h => h.querySelector('[data-reasoning-collapse]'));
-  const els = pick();
-  if (!els.length) return { err: '页面上没找到思考块（请先打开一个会话，且会话里要有已完成的思考）' };
+  const els = [...document.querySelectorAll('[data-component=reasoning-part]')];
+  if (!els.length) return { err: '页面上没找到思考块（请先打开一个会话，并把工具组点开）' };
   const el = els[els.length - 1];
-  const pid = el.getAttribute('data-timeline-part-id');
-  const stOf = (e) => {
-    const f = e.querySelector('[data-reasoning-collapse]');
-    return Math.round(e.getBoundingClientRect().height) + 'px/' + (f && f.style.display !== 'none' ? 'open' : 'closed');
+  const holder = el.closest('[data-timeline-part-id]') || el;
+  const h = Math.round(el.getBoundingClientRect().height);
+  const btn = document.querySelector('[data-oc-fold-all]');
+  return {
+    blocks: els.length,
+    height: h,
+    alwaysOpen: h > 48,                    // 单块恒展开：不再有 28px 的折叠态
+    groups: document.querySelectorAll('[data-component=collapsed-tool-group]').length,
+    btn: btn ? btn.textContent : 'none',
+    btnFixed: btn ? getComputedStyle(btn).position : '-',
+    pid: holder.getAttribute && holder.getAttribute('data-timeline-part-id')
   };
-  const st = () => { const b = document.querySelector('[data-timeline-part-id="' + pid + '"]'); return b ? stOf(b) : 'GONE'; };
-  const click = () => {
-    const b = document.querySelector('[data-timeline-part-id="' + pid + '"]');
-    b.querySelector('button').dispatchEvent(new MouseEvent('click', { bubbles: true }));
-  };
-  // 第一个思考块（历史块，后面一定有正文）应该默认折叠
-  const first = els[0] === el ? null : stOf(els[0]);
-  const seq = [st()];
-  click();
-  return new Promise((res) => setTimeout(() => {
-    seq.push(st()); click();
-    setTimeout(() => { seq.push(st()); res({ pid, blocks: els.length, first, seq }); }, 600);
-  }, 600));
 })()`;
 
 // ---- 静态校验（--static）：不连桌面端，直接查安装目录 asar 里三组补丁的标记 ----
@@ -121,8 +114,8 @@ if (process.argv.includes('--static')) {
   const anyChunk = (s) => chunks.some((c) => c.text.includes(s));
   const anyOther = (s) => Object.values(others).some((t) => t.includes(s));
   const checks = [
-    ['思考折叠 · 全局状态 Map（_rx$）', anyChunk('_rx$=globalThis.__ocReasoningOpen')],
-    ['思考折叠 · 收起按钮标记', anyChunk('data-reasoning-collapse')],
+    ['思考折叠 · 单块恒展开（P1/P4/P8）', anyChunk('_rx$=globalThis.__ocReasoningOpen')],
+    ['思考折叠 · 组级收起/展开按钮（fold-all）', anyChunk('data-oc-fold-all')],
     ['首页删除按钮 · 删除动作 home-session-delete', anyChunk('home-session-delete')],
     ['首页删除按钮 · 垃圾桶图标 ZZ_TRASH_ICON', anyChunk('ZZ_TRASH_ICON')],
     ['首页删除按钮 · 归档动作已移除', !anyChunk('e.onArchiveSession(e.record.session)')],
@@ -250,13 +243,10 @@ const out = await evalIn(p, PROBE);
 console.log(JSON.stringify(out, null, 2));
 
 if (out && out.err) { console.error('❌ ' + out.err); process.exit(2); }
-const [a, b, c] = out.seq;
-const okFlip = a !== b && b !== c && a !== 'GONE' && b !== 'GONE' && c !== 'GONE';
-const okFirst = !out.first || out.first.endsWith('/closed');
-const ok = okFlip && okFirst;
+const ok = !!out.alwaysOpen && out.btnFixed === 'fixed' && out.btn !== 'none';
 if (!ok) {
-  console.log('❌ 行为不符合预期（见上面 seq）');
+  console.log('❌ 行为不符合预期：思考块应恒展开（height>48）、右下角应有固定的收起/展开按钮');
 } else {
-  console.log('✅ 补丁生效：点一下能收起/展开' + (out.first ? '，历史思考块默认折叠' : '（最后一段思考后面还没出正文，默认保持展开属正常）'));
+  console.log('✅ 思考块恒展开（' + out.height + 'px，不再逐块折叠）；右下角固定按钮：' + out.btn);
 }
 process.exit(ok ? 0 : 3);

@@ -3,12 +3,16 @@
     if (globalThis.__ocFoldAllBoot$) return;
     globalThis.__ocFoldAllBoot$ = !0;
 
-    // 官方 timeline 的「分组」开关打开后，一轮里的 Shell/编辑/思考会合成一个
-    // [data-component=collapsed-tool-group]，标题就是「使用了 N 个 Shell、编辑…」。
-    // 补丁的「打开折叠」= 把这个组点开，里面的块就能正常滚；底部按钮负责一键收回。
+    // 老板定的交互（2026-10-28）：
+    //   发消息 → 思考/调工具全程**展开**，单块不再折叠；
+    //   这一轮回复结束 → 自动全收一次（收成「使用了 N 个 Shell、编辑…」一行）；
+    //   右下角固定按钮 = 手动全收 / 全展开，不随内容滚动。
+    // 操作对象是官方 timeline 分组容器 [data-component=collapsed-tool-group]。
     var ID = 'oc-fold-all-btn';
     var GROUP = '[data-component=collapsed-tool-group]';
     var btn = null;
+    var userFolded = false;   // 用户手动点过「收起」，本轮内不再自动展开
+    var pending = false;
 
     function groups() {
       return [].slice.call(document.querySelectorAll(GROUP));
@@ -45,6 +49,17 @@
       setTimeout(function () { step(fold, k + 1); }, 150);
     }
 
+    // 流式中保持最新一组展开；新工具组冒出来时也会被拉回来
+    function ensureOpen() {
+      var gs = groups();
+      if (!gs.length) return;
+      var g = gs[gs.length - 1];
+      if (isOpen(g) || pending) return;
+      pending = true;
+      setOpen(g, true);
+      setTimeout(function () { pending = false; }, 220);
+    }
+
     function make() {
       var b = document.createElement('button');
       b.id = ID;
@@ -57,7 +72,8 @@
       b.addEventListener('click', function (ev) {
         ev.preventDefault();
         ev.stopPropagation();
-        if (groups().some(isOpen)) foldAll(); else openAll();
+        if (groups().some(isOpen)) { userFolded = true; foldAll(); }
+        else { userFolded = false; openAll(); }
         setTimeout(refresh, 60);
       });
       document.body.appendChild(b);
@@ -80,7 +96,7 @@
       t = setTimeout(function () { t = 0; refresh(); }, 120);
     }
 
-    // ---------- 每轮回复结束收一次 ----------
+    // ---------- 判定「这一轮还在跑」 ----------
     // __ocMsgTime$：msgId → { t: {created, completed}, ... }，__ocMsgOwner$：msgId → sid
     function sid() {
       try {
@@ -90,26 +106,32 @@
       } catch (e) { return ''; }
     }
 
-    function latestDone() {
-      var M = globalThis.__ocMsgTime$, O = globalThis.__ocMsgOwner$, s = sid(), mx = 0;
-      if (!M || !M.size) return 0;
+    function latestMsg() {
+      var M = globalThis.__ocMsgTime$, O = globalThis.__ocMsgOwner$, s = sid(), best = null;
+      if (!M || !M.size) return null;
       M.forEach(function (v, id) {
-        if (!v || !v.t || !v.t.completed) return;
+        if (!v || !v.t || !v.t.created) return;
         if (s && O && O.get(id) && O.get(id) !== s) return;
-        if (v.t.completed > mx) mx = v.t.completed;
+        if (!best || v.t.created > best.created) best = v.t;
       });
-      return mx;
+      return best;
     }
 
-    var lastDone = latestDone();
+    function streaming() {
+      var b = latestMsg();
+      return !!(b && !b.completed);
+    }
+
+    var wasStream = streaming();
     setInterval(function () {
-      var d = latestDone();
-      // 启动时 __ocMsgTime$ 可能还没数据（lastDone=0），第一次拿到值只做基准，不算「刚结束一轮」
-      if (!lastDone) { lastDone = d; return; }
-      if (d > lastDone) {
-        lastDone = d;
-        if (groups().some(isOpen)) foldAll();
+      var st = streaming();
+      if (st) {
+        if (!userFolded) ensureOpen();
+      } else if (wasStream) {
+        foldAll();          // 整轮结束：自动全收一次
+        userFolded = false;
       }
+      wasStream = st;
     }, 600);
 
     document.addEventListener('scroll', soon, true);

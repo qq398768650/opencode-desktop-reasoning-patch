@@ -138,45 +138,9 @@ const P4_FIND = 'get open(){return e.disclosure.value(t().ref.partID)??(e.timeli
 const P4_REPL = 'get open(){return e.disclosure.value(t().ref.partID)}';
 const P8_FIND = 'onOpenChange:t=>{r(`open`,t),e.onOpenChange?.(t),e.onContentRendered?.()}';
 const P8_REPL = 'onOpenChange:t=>{if(!_stream$()||!t)_rx$.set(e.id,t);(_stream$()&&t)||r(`open`,t),e.onContentRendered?.()}';
-// 2.1.1：渲染辅助名又换了一轮（旧版 x=effect / U=prop setter / Y=effect；新版 V=effect / B=prop setter / Y=Show 组件）。
-// 所以 P2_FIND 用新版写法，P2_REPL 里两个副作用也统一用 V —— 别照抄旧版的 x/Y。
-// 2.1.3：route 里 effect 换成了 H，prop setter 变成 V。
-// 2.1.4：又换回 2.1.1 的命名 —— effect = V、prop setter = B（实测 `V(()=>` 44 处、`V(()=>B(` 28 处、`H(()=>` 0 处），
-// 原文是 `V(()=>B(n,\`data-timeline-part-id\`,e.id))`。P2_REPL 内部两处 effect 调用也跟着用 V。
-// 其它锚点（P1/P4/P8/D1–D8/F1/F2）在 2.1.4 原样可用。
-// 2.2.0：命名又换了一轮 —— effect = X、prop setter = k（实测 `V(()=>` 0 处、`X(()=>k(` 39 处），
-// 原文是 `X(()=>k(n,\`data-timeline-part-id\`,e.id)),n})()}`（后面紧跟 `Fn([\`click\`]);`）。
-// V 已降级成「挂载子节点」的组件函数（`V(parent,child)`），不能再当 effect 用；H 是 memo（`H(()=>x)()`）。
-// P2_REPL 内部两处 effect 调用也跟着用 X。P1/P4/P8/D1–D8/F1/F2 原样可用。
-const P2_FIND = 'X(()=>d(n,`data-timeline-part-id`,e.id)),n})()}';
-const P2_REPL = 'X(()=>k(n,`data-timeline-part-id`,e.id)),(()=>{' +
-  'var _foot$=document.createElement(`button`);' +
-  '_foot$.setAttribute(`type`,`button`);' +
-  '_foot$.setAttribute(`data-reasoning-collapse`,``);' +
-  '_foot$.style.cssText=`display:block;width:100%;cursor:pointer;background:none;border:0;padding:2px 0 0;margin:0;font:inherit;color:inherit;opacity:.55;text-align:center;letter-spacing:.08em`;' +
-  '_foot$.textContent=`收起 ▴`;' +
-  // 折叠会让这个块瞬间变矮，上方内容整体位移 —— 用户正在翻历史时视口会被带偏。
-  // 所以折叠前记下本块相对视口的位置，折叠后把滚动容器补偿回来（等价于浏览器的 scroll anchoring）。
-  'var _findScroller$=function(){var p=n.parentElement;while(p){try{var s=getComputedStyle(p);if(/(auto|scroll)/.test(s.overflowY)&&p.scrollHeight>p.clientHeight+1)return p}catch(e){}p=p.parentElement}return document.scrollingElement||document.documentElement};' +
-  'var _anchor$=function(fn){var sc=_findScroller$(),r0=n.getBoundingClientRect(),useB=r0.bottom<=0,meas=function(){var r=n.getBoundingClientRect();return useB?r.bottom:r.top},t0=meas();fn();var fix=function(){if(!sc||!n.isConnected)return;var d=meas()-t0;if(Math.abs(d)>1)sc.scrollTop+=d};fix();try{queueMicrotask(fix)}catch(e){}try{requestAnimationFrame(fix)}catch(e){}};' +
-  'var _collapse$=()=>{if(_stream$())return;_anchor$(function(){_rx$.set(e.id,!1),r(`open`,!1),e.onOpenChange?.(!1),e.onContentRendered?.()})};' +
-  // 折叠时机：老板要的是「一次回复只收一次」——思考结束先摊着，等整轮真正结束由
-  // inject/fold-all.js 统一收（它盯 message completed），这里不再按块自动折。
-  'var _want$=()=>!1;' +
-  'var _pending$=!1;' +
-  'var _mo$=new MutationObserver(()=>{if(!n.isConnected){_mo$.disconnect();return}if(_pending$)return;_pending$=!0;setTimeout(()=>{_pending$=!1;if(!n.isConnected){_mo$.disconnect();return}if(_want$()){_mo$.disconnect(),_collapse$()}},200)});' +
-  // 必须在挂载后的 effect 里观察：IIFE 执行时 n 还没进 DOM，parentElement 是空的。
-  'X(()=>{if(_want$()){_collapse$();return}_mo$.observe(document.body,{childList:!0,subtree:!0})});' +
-  // 滚动也要触发：块是被「滚」出视口的，光靠 MutationObserver 等不到。scroll 不冒泡，只能捕获阶段挂一次全局。
-  'var _q$=globalThis.__ocFoldQ$||(globalThis.__ocFoldQ$=[]);' +
-  'for(var _qi$=_q$.length-1;_qi$>=0;_qi$--)if(_q$[_qi$].id===e.id)_q$.splice(_qi$,1);' +
-  '_q$.push({id:e.id,n:n,want:_want$,fold:_collapse$});' +
-  'if(!globalThis.__ocFoldScan$){globalThis.__ocFoldScan$=function(){var _qq$=globalThis.__ocFoldQ$||[];for(var _sk$=_qq$.length-1;_sk$>=0;_sk$--){var _it$=_qq$[_sk$];if(!_it$.n.isConnected){_qq$.splice(_sk$,1);continue}if(_it$.want()){_qq$.splice(_sk$,1);_it$.fold()}}};document.addEventListener(`scroll`,function(){if(globalThis.__ocFoldT$)return;globalThis.__ocFoldT$=setTimeout(function(){globalThis.__ocFoldT$=0;globalThis.__ocFoldScan$()},120)},true)}' +
-  '_foot$.addEventListener(`click`,t=>{t.preventDefault(),t.stopPropagation(),_collapse$()});' +
-  'n.addEventListener(`dblclick`,t=>{if(t.target&&t.target.closest&&t.target.closest(`a,input,textarea,select,button`))return;_collapse$()});' +
-  'X(()=>{_foot$.style.display=i()&&!_stream$()?``:`none`}),n.appendChild(_foot$)' +
-  '})(),n})()}';
-
+// P2（底部「收起 ▴」按钮 / 双击空白 / 单块自动折叠）在 2.2.1 之后整条移除了：
+// 老板要的是「一次对话全程展开，只在整轮回复结束后由 inject/fold-all.js 收一次」，
+// 所以 P1 的 i() 直接恒返回 !0，单块不再有折叠入口。
 // ---------- 3b) 首页会话行「删除」按钮 ----------
 // 官方代码里写死 SHOW_HOME_SESSION_ARCHIVE=false（编译后是 `bie=!1`），所以每行的操作按钮从不渲染。
 // 本补丁把开关打开，并把它从「归档」改造成「删除」（归档后端已禁用；删除复用官方 onDeleteSession + 确认框）。
@@ -398,47 +362,24 @@ let content = Buffer.from(readEntry(srcParsed, targetPath));
   const after = s.slice(m.index, m.index + 240);
   const pv = (after.match(/([A-Za-z_$][\w$]*)\.streaming\?/) || [])[1] || propsVar;
   const decl = `_rx$=globalThis.__ocReasoningOpen||(globalThis.__ocReasoningOpen=new Map()),` +
-    `_stream$=()=>!!(${pv}.streaming&&${pv}.content?.time?.completed===void 0),` +
-    // 「我后面有没有出现下一段思考（带收起按钮的块）或正文块」—— 工具调用行（含 .tool-collapsible）不算，
-    // 否则每轮思考完一调工具就立刻收起。定位「我」用 part id 比对，不依赖父节点（每个 part 的父节点都不同）。
-    // 两种收法：
-    //   ① 后面最后一块是**正文**（整轮回复真结束了，后面不会再有工具/思考）→ 直接收，不管我在哪；
-    //      收的时候有 _anchor$ 补偿，下方内容不跳。
-    //   ② 其它情况（后面是工具调用 = 还在工作中、或只有下一段思考）→ 只有我自己整块滚出视口上方
-    //      （height>0 防未布局）才收，这就是「无感折叠」：人看不见它的时候才收。
-    // 「最后一块」必须一直扫到底再判断：思考 → 正文 → 工具调用（工作中）这种，正文后面还有工具，
-    // 整轮没结束，不能因为中间出现了一句正文就把上一段思考折了。
-    `_later$=()=>{var _a$=[...document.querySelectorAll(\`[data-timeline-part-id]\`)],_k$=-1,_j$,_last$=null;` +
-    `for(_j$=0;_j$<_a$.length;_j$++)if(_a$[_j$].getAttribute(\`data-timeline-part-id\`)===${propsVar}.id)_k$=_j$;` +
-    `if(_k$<0)return!1;var _r$=_a$[_k$].getBoundingClientRect(),_off$=_r$.height>0&&_r$.bottom<=0;` +
-    `for(_j$=_k$+1;_j$<_a$.length;_j$++){var _e$=_a$[_j$];` +
-    `if(_e$.getAttribute(\`data-timeline-part-id\`)===${propsVar}.id)continue;` +
-    `if(_e$.querySelector(\`[data-reasoning-collapse]\`))continue;` +
-    `if(_e$.querySelector(\`.tool-collapsible\`)){_last$=\`tool\`;continue}` +
-    `if((_e$.textContent||\`\`).trim())_last$=\`body\`}` +
-    `return _last$===\`body\`?!0:_off$},`;
-  // 默认值：流式中展开；用户手动开合过就听用户的；否则看「后面有没有下一段思考/正文」——
-  // 有就折叠，没有就**保持展开**（这就是「思考结束后不立刻折」的关键：思考结束组件会重挂载，
-  // 那时 _rx$ 里没有记录，必须靠 !_later$() 撑住展开，否则默认值 false 会立刻收）。
-  const newI = `${name}=()=>_stream$()?!0:(${storeVar}.open!==void 0?!!${storeVar}.open:(_rx$.has(${propsVar}.id)?!!_rx$.get(${propsVar}.id):!_later$()))`;
+    `_stream$=()=>!!(${pv}.streaming&&${pv}.content?.time?.completed===void 0),`;
+  // 2026-10-28 老板定调：**思考块永远展开**，不做单块折叠 ——
+  // 一次对话里「发消息 → 思考 → 调工具」全程摊着，直到整轮结束由 inject/fold-all.js
+  // 统一把官方分组容器收成一行（「使用了 N 个 Shell、编辑…」）。
+  const newI = `${name}=()=>!0`;
   content = Buffer.from(s.slice(0, m.index) + decl + newI + s.slice(m.index + m[0].length), 'utf8');
-  console.log('  P1 (i() + _rx$/_stream$ 声明): OK');
+  console.log('  P1 (i() 恒展开 + _rx$/_stream$ 声明): OK');
 }
 content = replaceOnce(content, P4_FIND, P4_REPL, 'P4 (去掉设置兜底)');
 content = replaceOnce(content, P8_FIND, P8_REPL, 'P8 (open 状态记账)');
-content = replaceOnce(content, P2_FIND, P2_REPL, 'P2+P3 (收起按钮/双击/结束时折叠)');
 
 // 自检：产物里绝不能出现 undefined.xxx（变量名没接上），也不能缺声明
 {
   const txt = content.toString('utf8');
   if (/undefined\.[A-Za-z_$]/.test(txt)) throw new Error('补丁自检失败：产物里出现 undefined.<prop>，变量名没接上');
   if (!txt.includes('_stream$=()=>!!(')) throw new Error('补丁自检失败：_stream$ 声明缺失');
-  if (!txt.includes('_later$') || !txt.includes('MutationObserver')) throw new Error('补丁自检失败：折叠时机（下一段 part 出现才收）逻辑缺失');
-  if (!txt.includes('!_later$()')) throw new Error('补丁自检失败：i() 缺少「后面没有下一段思考/正文时保持展开」的默认值');
-  if (!txt.includes('_anchor$=function')) throw new Error('补丁自检失败：折叠时的滚动位置补偿（_anchor$）缺失');
-  if (!txt.includes('__ocFoldScan$')) throw new Error('补丁自检失败：滚出视口才折叠（__ocFoldScan$）缺失');
-  if (txt.includes('_graceTimer$')) throw new Error('补丁自检失败：还残留按时间折叠的 grace 逻辑');
-  if (!txt.includes('data-reasoning-collapse')) throw new Error('补丁自检失败：收起按钮没生成');
+  if (!txt.includes('=()=>!0')) throw new Error('补丁自检失败：i() 应该是恒展开');
+  if (txt.includes('_later$') || txt.includes('data-reasoning-collapse')) throw new Error('补丁自检失败：还残留单块折叠逻辑');
 }
 
 jobs.push({ path: targetPath, content, label: '思考折叠' });
