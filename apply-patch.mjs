@@ -148,7 +148,7 @@ const P8_REPL = 'onOpenChange:t=>{if(!_stream$()||!t)_rx$.set(e.id,t);(_stream$(
 // 原文是 `X(()=>k(n,\`data-timeline-part-id\`,e.id)),n})()}`（后面紧跟 `Fn([\`click\`]);`）。
 // V 已降级成「挂载子节点」的组件函数（`V(parent,child)`），不能再当 effect 用；H 是 memo（`H(()=>x)()`）。
 // P2_REPL 内部两处 effect 调用也跟着用 X。P1/P4/P8/D1–D8/F1/F2 原样可用。
-const P2_FIND = 'X(()=>k(n,`data-timeline-part-id`,e.id)),n})()}';
+const P2_FIND = 'X(()=>d(n,`data-timeline-part-id`,e.id)),n})()}';
 const P2_REPL = 'X(()=>k(n,`data-timeline-part-id`,e.id)),(()=>{' +
   'var _foot$=document.createElement(`button`);' +
   '_foot$.setAttribute(`type`,`button`);' +
@@ -160,10 +160,9 @@ const P2_REPL = 'X(()=>k(n,`data-timeline-part-id`,e.id)),(()=>{' +
   'var _findScroller$=function(){var p=n.parentElement;while(p){try{var s=getComputedStyle(p);if(/(auto|scroll)/.test(s.overflowY)&&p.scrollHeight>p.clientHeight+1)return p}catch(e){}p=p.parentElement}return document.scrollingElement||document.documentElement};' +
   'var _anchor$=function(fn){var sc=_findScroller$(),r0=n.getBoundingClientRect(),useB=r0.bottom<=0,meas=function(){var r=n.getBoundingClientRect();return useB?r.bottom:r.top},t0=meas();fn();var fix=function(){if(!sc||!n.isConnected)return;var d=meas()-t0;if(Math.abs(d)>1)sc.scrollTop+=d};fix();try{queueMicrotask(fix)}catch(e){}try{requestAnimationFrame(fix)}catch(e){}};' +
   'var _collapse$=()=>{if(_stream$())return;_anchor$(function(){_rx$.set(e.id,!1),r(`open`,!1),e.onOpenChange?.(!1),e.onContentRendered?.()})};' +
-  // 折叠时机（无感折叠）：不按时间收、也不等下一段出现就收，而是等这个块**完全滚出视口上方**才收。
-  // 收的那一刻人已经看不见它了，再加 _anchor$ 把 scrollTop 补回去，下方内容原地不动，等于什么都没发生。
-  // 手动开合过的块（_rx$ 里有记录）不自动收。
-  'var _want$=()=>!_rx$.has(e.id)&&!_stream$()&&_later$();' +
+  // 折叠时机：老板要的是「一次回复只收一次」——思考结束先摊着，等整轮真正结束由
+  // inject/fold-all.js 统一收（它盯 message completed），这里不再按块自动折。
+  'var _want$=()=>!1;' +
   'var _pending$=!1;' +
   'var _mo$=new MutationObserver(()=>{if(!n.isConnected){_mo$.disconnect();return}if(_pending$)return;_pending$=!0;setTimeout(()=>{_pending$=!1;if(!n.isConnected){_mo$.disconnect();return}if(_want$()){_mo$.disconnect(),_collapse$()}},200)});' +
   // 必须在挂载后的 effect 里观察：IIFE 执行时 n 还没进 DOM，parentElement 是空的。
@@ -243,6 +242,8 @@ const T_TIME_JS = fs.readFileSync(path.join(HERE, 'inject', 'time-stats.js'), 'u
 
 // 第四组：Ctrl+左键点会话里的文件路径 → 资源管理器打开所在目录并选中文件
 const T_FILE_JS = fs.readFileSync(path.join(HERE, 'inject', 'file-reveal.js'), 'utf8').trim();
+// 右下角固定的「收起全部」悬浮按钮（只收思考块，跟着 __ocFoldQ$ 走，不随滚动）
+const T_FOLD_ALL_JS = fs.readFileSync(path.join(HERE, 'inject', 'fold-all.js'), 'utf8').trim();
 
 // 主进程：加一个 oc:reveal-path IPC（用 shell.showItemInFolder，正好是「打开目录 + 选中文件」）
 // 不依赖打包后的压缩变量名：动态 import electron，内置模块走 process.getBuiltinModule。
@@ -285,14 +286,14 @@ const MAIN_REVEAL_JS = ';import("electron").then(function(m){try{m.ipcMain.handl
 // 代表消息取行内 `msg_` 前缀 part 中 `time.completed` 最大的那条（行上的 data-message-id 是用户消息 id，
 // 只有 time.created，拿它会一直不显示）。折叠组展开后 text-part-meta 会重新出现，此时走旧路径、跳过回退。
 const D_RULES = [
-  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 时间/用量/速度/会话统计 + 文件定位', ',fBt=!1,pBt=500,mBt=250,hBt=200,gBt=[56,38,66,46,30,52];', ',fBt=!0,pBt=500,mBt=250,hBt=200,gBt=[56,38,66,46,30,52],' + D_TRASH_ICON + ';' + D_MULTI_JS + ';' + T_TIME_JS + ';' + T_FILE_JS + ';'],
+  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 时间/用量/速度/会话统计 + 文件定位 + 收起全部', ',YBt=!1,XBt=500,ZBt=250,QBt=200,$Bt=[56,38,66,46,30,52];', ',YBt=!0,XBt=500,ZBt=250,QBt=200,$Bt=[56,38,66,46,30,52],' + D_TRASH_ICON + ';' + D_MULTI_JS + ';' + T_TIME_JS + ';' + T_FILE_JS + ';' + T_FOLD_ALL_JS + ';'],
   ['D2 tooltip 文案 归档→删除', 'get value(){return e.language.t(`common.archive`)}', 'get value(){return e.language.t(`common.delete`)}'],
   ['D3 动作标识 home-session-archive→delete', '`home-session-archive`', '`home-session-delete`'],
-  ['D4 图标 归档→垃圾桶 + 注册行→会话映射', 'get icon(){return M(VG,{name:`archive`})}', 'get icon(){return globalThis.__ocRegRow$&&globalThis.__ocRegRow$(e.server,e.record.session),globalThis.__ocDeleteApi$=e.onDeleteSession,M(ZZ_TRASH_ICON,{})}'],
+  ['D4 图标 归档→垃圾桶 + 注册行→会话映射', 'get icon(){return N(AG,{name:`archive`})}', 'get icon(){return globalThis.__ocRegRow$&&globalThis.__ocRegRow$(e.server,e.record.session),globalThis.__ocDeleteApi$=e.onDeleteSession,N(ZZ_TRASH_ICON,{})}'],
   ['D5 无障碍标签 归档→删除', 'get"aria-label"(){return e.language.t(`common.archive`)}', 'get"aria-label"(){return e.language.t(`common.delete`)}'],
   ['D6 点击动作 归档→删除 + Shift 免确认', D_ANCHOR, '(function(){var _p=globalThis.__ocSkipConfirm;globalThis.__ocSkipConfirm=!!t.shiftKey;try{e.onDeleteSession(e.server,e.record.session)}finally{globalThis.__ocSkipConfirm=_p}})()'],
-  ['D7 showDelete 支持跳过确认框（走内部删除函数 v）', 'showDelete:(e,t)=>r.show(()=>M(y,{server:e,session:t}))', 'showDelete:(e,t)=>globalThis.__ocSkipConfirm?v(e,t):r.show(()=>M(y,{server:e,session:t}))'],
-  ['D8 会话右键菜单加「多选删除」入口', 'M(J$.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[Jt(()=>e.language.t(`common.delete`)),`…`]}})', 'M(J$.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[Jt(()=>e.language.t(`common.delete`)),`…`]}}),M(J$.Item,{onSelect:()=>globalThis.__ocMultiEnter$(e.server,e.record.session),get children(){return[Jt(()=>"多选删除"),`…`]}})'],
+  ['D7 showDelete 支持跳过确认框（走内部删除函数 v）', 'showDelete:(e,t)=>r.show(()=>N(y,{server:e,session:t}))', 'showDelete:(e,t)=>globalThis.__ocSkipConfirm?v(e,t):r.show(()=>N(y,{server:e,session:t}))'],
+  ['D8 会话右键菜单加「多选删除」入口', 'N(K$.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[Zt(()=>e.language.t(`common.delete`)),`…`]}})', 'N(K$.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[Zt(()=>e.language.t(`common.delete`)),`…`]}}),N(K$.Item,{onSelect:()=>globalThis.__ocMultiEnter$(e.server,e.record.session),get children(){return[Jt(()=>"多选删除"),`…`]}})'],
 ];
 
 function replaceOnce(content, find, repl, label) {
