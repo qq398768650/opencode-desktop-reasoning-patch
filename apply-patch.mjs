@@ -1,10 +1,11 @@
 // apply-patch.mjs — 给 opencode 桌面端 app.asar 打三组补丁
-//   [1] 思考折叠（route-*.js 里的思考组件）
-//       目标行为：流式中展开 → 思考一结束不立刻折 → 下一段思考开始或正文结果出来时折成一行 →
-//                 点标题/底部「收起 ▴」/双击空白都能收；手动开合状态跨重挂载保留。
-//   [2] 首页会话行「删除」按钮（main-*.js 主 bundle）
+//   [1] 首页会话行「删除」按钮（main-*.js 主 bundle）
 //       把官方写死关掉的会话行按钮开关打开，并把该按钮从「归档」改造成「删除」
 //       （内联 SVG 垃圾桶图标 + 复用官方删除确认框）。
+//   [2] 时间 / 用量 / 速度显示（同一 bundle 内注入）
+//   [3] Ctrl+左键点文件路径定位（preload + 主进程 IPC）
+// 注：思考折叠补丁（P1/P4/P8 + fold-all）已于 2026-10-28 全部移除 —— 老板反馈
+//     该逻辑影响客户端稳定性、明显变卡，改回官方默认行为。
 // 用法：
 //   node apply-patch.mjs            # dry-run，只报告会改什么
 //   node apply-patch.mjs --write    # 真正写入 app.asar（写前请先完全退出桌面端）
@@ -132,15 +133,6 @@ function rebuildAsar(a, targetPath, newContent) {
 }
 
 // ---------- 3) 补丁内容 ----------
-// 组1 = i 的名字，组2 = 第一个局部变量（2.0.29 里是 e，props），组3 = 第二个（n，本地 store）
-const P1_FIND = /([A-Za-z_$][\w$]*)=\(\)=>([A-Za-z_$][\w$]*)\.open\?\?([A-Za-z_$][\w$]*)\.open\?\?\2\.defaultOpen\?\?!1/;
-const P4_FIND = 'get open(){return e.disclosure.value(t().ref.partID)??(e.timelineDetail?e.timelineDetail().thinking.details===`expanded`:void 0)}';
-const P4_REPL = 'get open(){return e.disclosure.value(t().ref.partID)}';
-const P8_FIND = 'onOpenChange:t=>{r(`open`,t),e.onOpenChange?.(t),e.onContentRendered?.()}';
-const P8_REPL = 'onOpenChange:t=>{if(!_stream$()||!t)_rx$.set(e.id,t);(_stream$()&&t)||r(`open`,t),e.onContentRendered?.()}';
-// P2（底部「收起 ▴」按钮 / 双击空白 / 单块自动折叠）在 2.2.1 之后整条移除了：
-// 老板要的是「一次对话全程展开，只在整轮回复结束后由 inject/fold-all.js 收一次」，
-// 所以 P1 的 i() 直接恒返回 !0，单块不再有折叠入口。
 // ---------- 3b) 首页会话行「删除」按钮 ----------
 // 官方代码里写死 SHOW_HOME_SESSION_ARCHIVE=false（编译后是 `bie=!1`），所以每行的操作按钮从不渲染。
 // 本补丁把开关打开，并把它从「归档」改造成「删除」（归档后端已禁用；删除复用官方 onDeleteSession + 确认框）。
@@ -207,7 +199,6 @@ const T_TIME_JS = fs.readFileSync(path.join(HERE, 'inject', 'time-stats.js'), 'u
 // 第四组：Ctrl+左键点会话里的文件路径 → 资源管理器打开所在目录并选中文件
 const T_FILE_JS = fs.readFileSync(path.join(HERE, 'inject', 'file-reveal.js'), 'utf8').trim();
 // 右下角固定的「收起全部」悬浮按钮（只收思考块，跟着 __ocFoldQ$ 走，不随滚动）
-const T_FOLD_ALL_JS = fs.readFileSync(path.join(HERE, 'inject', 'fold-all.js'), 'utf8').trim();
 
 // 主进程：加一个 oc:reveal-path IPC（用 shell.showItemInFolder，正好是「打开目录 + 选中文件」）
 // 不依赖打包后的压缩变量名：动态 import electron，内置模块走 process.getBuiltinModule。
@@ -250,7 +241,7 @@ const MAIN_REVEAL_JS = ';import("electron").then(function(m){try{m.ipcMain.handl
 // 代表消息取行内 `msg_` 前缀 part 中 `time.completed` 最大的那条（行上的 data-message-id 是用户消息 id，
 // 只有 time.created，拿它会一直不显示）。折叠组展开后 text-part-meta 会重新出现，此时走旧路径、跳过回退。
 const D_RULES = [
-  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 时间/用量/速度/会话统计 + 文件定位 + 收起全部', ',YBt=!1,XBt=500,ZBt=250,QBt=200,$Bt=[56,38,66,46,30,52];', ',YBt=!0,XBt=500,ZBt=250,QBt=200,$Bt=[56,38,66,46,30,52],' + D_TRASH_ICON + ';' + D_MULTI_JS + ';' + T_TIME_JS + ';' + T_FILE_JS + ';' + T_FOLD_ALL_JS + ';'],
+  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 时间/用量/速度/会话统计 + 文件定位 + 收起全部', ',YBt=!1,XBt=500,ZBt=250,QBt=200,$Bt=[56,38,66,46,30,52];', ',YBt=!0,XBt=500,ZBt=250,QBt=200,$Bt=[56,38,66,46,30,52],' + D_TRASH_ICON + ';' + D_MULTI_JS + ';' + T_TIME_JS + ';' + T_FILE_JS + ';'],
   ['D2 tooltip 文案 归档→删除', 'get value(){return e.language.t(`common.archive`)}', 'get value(){return e.language.t(`common.delete`)}'],
   ['D3 动作标识 home-session-archive→delete', '`home-session-archive`', '`home-session-delete`'],
   ['D4 图标 归档→垃圾桶 + 注册行→会话映射', 'get icon(){return N(AG,{name:`archive`})}', 'get icon(){return globalThis.__ocRegRow$&&globalThis.__ocRegRow$(e.server,e.record.session),globalThis.__ocDeleteApi$=e.onDeleteSession,N(ZZ_TRASH_ICON,{})}'],
@@ -324,12 +315,6 @@ function findChunk(a, test) {
   });
   return hits;
 }
-function findTargetChunk(a) {
-  const hits = findChunk(a, (t) => P1_FIND.test(t));
-  if (!hits.length) throw new Error('在所有 renderer chunk 里都没找到思考组件锚点');
-  if (hits.length > 1) console.log('注意：思考组件锚点命中多个 chunk：' + hits.join(', '));
-  return hits[0];
-}
 function findDeleteChunk(a) {
   const hits = findChunk(a, (t) => t.includes(D_ANCHOR));
   if (!hits.length) throw new Error('在所有 renderer chunk 里都没找到首页会话行锚点（' + D_ANCHOR + '）');
@@ -338,51 +323,12 @@ function findDeleteChunk(a) {
 }
 
 const srcParsed = parseAsar(source);
-const chunk = findTargetChunk(srcParsed);
-const targetPath = '/out/renderer/assets/' + chunk;
-console.log('目标 chunk [思考折叠]:', targetPath);
 const delChunk = findDeleteChunk(srcParsed);
 const delPath = '/out/renderer/assets/' + delChunk;
 console.log('目标 chunk [首页删除]:', delPath);
 
 const jobs = [];
 
-// ---- 补丁 1：思考折叠 ----
-let content = Buffer.from(readEntry(srcParsed, targetPath));
-// P1：i() 改成「流式中恒展开；非流式只看记账表（_rx$）」，并顺手把 _rx$ / _stream$ 声明进同一个 let 列表。
-// 注意：必须一次替换搞定（之前分 P1/P1b 两步，P1b 的正则只有 2 个分组却按 3 个解构 → 写出了 `undefined.open`，直接让渲染进程崩）。
-{
-  const s = content.toString('utf8');
-  const m = s.match(P1_FIND);
-  if (!m) throw new Error('P1：锚点没找到（新版本代码结构可能变了，需要先看 bundle 再改锚点）');
-  const name = m[1];        // i
-  const propsVar = m[2];    // e（组件 props）
-  const storeVar = m[3];    // n（本地 store）
-  // props 变量名以紧邻的 memo 为准（`a=N(()=>e.streaming?...`），避免硬编码
-  const after = s.slice(m.index, m.index + 240);
-  const pv = (after.match(/([A-Za-z_$][\w$]*)\.streaming\?/) || [])[1] || propsVar;
-  const decl = `_rx$=globalThis.__ocReasoningOpen||(globalThis.__ocReasoningOpen=new Map()),` +
-    `_stream$=()=>!!(${pv}.streaming&&${pv}.content?.time?.completed===void 0),`;
-  // 2026-10-28 老板定调：**思考块永远展开**，不做单块折叠 ——
-  // 一次对话里「发消息 → 思考 → 调工具」全程摊着，直到整轮结束由 inject/fold-all.js
-  // 统一把官方分组容器收成一行（「使用了 N 个 Shell、编辑…」）。
-  const newI = `${name}=()=>!0`;
-  content = Buffer.from(s.slice(0, m.index) + decl + newI + s.slice(m.index + m[0].length), 'utf8');
-  console.log('  P1 (i() 恒展开 + _rx$/_stream$ 声明): OK');
-}
-content = replaceOnce(content, P4_FIND, P4_REPL, 'P4 (去掉设置兜底)');
-content = replaceOnce(content, P8_FIND, P8_REPL, 'P8 (open 状态记账)');
-
-// 自检：产物里绝不能出现 undefined.xxx（变量名没接上），也不能缺声明
-{
-  const txt = content.toString('utf8');
-  if (/undefined\.[A-Za-z_$]/.test(txt)) throw new Error('补丁自检失败：产物里出现 undefined.<prop>，变量名没接上');
-  if (!txt.includes('_stream$=()=>!!(')) throw new Error('补丁自检失败：_stream$ 声明缺失');
-  if (!txt.includes('=()=>!0')) throw new Error('补丁自检失败：i() 应该是恒展开');
-  if (txt.includes('_later$') || txt.includes('data-reasoning-collapse')) throw new Error('补丁自检失败：还残留单块折叠逻辑');
-}
-
-jobs.push({ path: targetPath, content, label: '思考折叠' });
 
 // ---- 补丁 2：首页会话行「删除」按钮 ----
 let del = Buffer.from(readEntry(srcParsed, delPath));

@@ -60,19 +60,13 @@ async function evalIn(page, expr) {
 
 const PROBE = `(() => {
   const els = [...document.querySelectorAll('[data-component=reasoning-part]')];
-  if (!els.length) return { err: '页面上没找到思考块（请先打开一个会话，并把工具组点开）' };
-  const el = els[els.length - 1];
-  const holder = el.closest('[data-timeline-part-id]') || el;
-  const h = Math.round(el.getBoundingClientRect().height);
-  const btn = document.querySelector('[data-oc-fold-all]');
   return {
     blocks: els.length,
-    height: h,
-    alwaysOpen: h > 48,                    // 单块恒展开：不再有 28px 的折叠态
-    groups: document.querySelectorAll('[data-component=collapsed-tool-group]').length,
-    btn: btn ? btn.textContent : 'none',
-    btnFixed: btn ? getComputedStyle(btn).position : '-',
-    pid: holder.getAttribute && holder.getAttribute('data-timeline-part-id')
+    heights: els.slice(-3).map((e) => Math.round(e.getBoundingClientRect().height)),
+    foldAll: !!document.querySelector('[data-oc-fold-all]'),
+    collapseBtn: !!document.querySelector('[data-reasoning-collapse]'),
+    rxBoot: typeof globalThis.__ocReasoningOpen,
+    foldAllBoot: typeof globalThis.__ocFoldAllBoot$
   };
 })()`;
 
@@ -114,8 +108,8 @@ if (process.argv.includes('--static')) {
   const anyChunk = (s) => chunks.some((c) => c.text.includes(s));
   const anyOther = (s) => Object.values(others).some((t) => t.includes(s));
   const checks = [
-    ['思考折叠 · 单块恒展开（P1/P4/P8）', anyChunk('_rx$=globalThis.__ocReasoningOpen')],
-    ['思考折叠 · 组级收起/展开按钮（fold-all）', anyChunk('data-oc-fold-all')],
+    ['思考折叠 · 单块折叠逻辑已移除（无 _rx$）', !anyChunk('_rx$=globalThis.__ocReasoningOpen')],
+    ['思考折叠 · 收起全部按钮已移除', !anyChunk('data-oc-fold-all')],
     ['首页删除按钮 · 删除动作 home-session-delete', anyChunk('home-session-delete')],
     ['首页删除按钮 · 垃圾桶图标 ZZ_TRASH_ICON', anyChunk('ZZ_TRASH_ICON')],
     ['首页删除按钮 · 归档动作已移除', !anyChunk('e.onArchiveSession(e.record.session)')],
@@ -132,9 +126,6 @@ if (process.argv.includes('--static')) {
     ['时间显示 · 首页活跃时间 data-oc-home-time', anyChunk('data-oc-home-time')],
     ['时间显示 · 上下文上限按 model id 缓存 __ocCtxLimits$', anyChunk('__ocCtxLimits$')],
     ['文件定位 · 启动标记 __ocFileBoot$', anyChunk('__ocFileBoot$')],
-    ['收起全部 · 启动标记 __ocFoldAllBoot$', anyChunk('__ocFoldAllBoot$')],
-    ['收起全部 · 悬浮按钮 data-oc-fold-all', anyChunk('data-oc-fold-all')],
-    ['收起全部 · 固定定位（不随内容滚动）', anyChunk('position:fixed;right:24px;bottom:24px')],
     ['速度按会话隔离 · LIVE_BY 按 sid 分桶', anyChunk('LIVE_BY')],
     ['速度口径 · 每轮实测平均 ST.lastTurn', anyChunk('ST.lastTurn')],
     ['速度口径 · 本轮累计字符 dL.ch', anyChunk('dL.ch')],
@@ -150,7 +141,7 @@ if (process.argv.includes('--static')) {
   console.log('asar:', asarPath, '(' + buf.length + ' 字节)');
   for (const [label, ok] of checks) console.log((ok ? '✅ ' : '❌ ') + label);
   const allOk = checks.every(([, ok]) => ok);
-  console.log(allOk ? '✅ 四组补丁标记齐全（结构静态校验通过）' : '❌ 有标记缺失：补丁没打上，或被打回了官方原版');
+  console.log(allOk ? '✅ 三组补丁标记齐全（结构静态校验通过）' : '❌ 有标记缺失：补丁没打上，或被打回了官方原版');
   process.exit(allOk ? 0 : 3);
 }
 
@@ -243,10 +234,10 @@ const out = await evalIn(p, PROBE);
 console.log(JSON.stringify(out, null, 2));
 
 if (out && out.err) { console.error('❌ ' + out.err); process.exit(2); }
-const ok = !!out.alwaysOpen && out.btnFixed === 'fixed' && out.btn !== 'none';
+const ok = !out.foldAll && !out.collapseBtn && out.rxBoot === 'undefined' && out.foldAllBoot === 'undefined';
 if (!ok) {
-  console.log('❌ 行为不符合预期：思考块应恒展开（height>48）、右下角应有固定的收起/展开按钮');
+  console.log('❌ 还残留思考折叠补丁：' + JSON.stringify({ foldAll: out.foldAll, collapseBtn: out.collapseBtn, rxBoot: out.rxBoot, foldAllBoot: out.foldAllBoot }));
 } else {
-  console.log('✅ 思考块恒展开（' + out.height + 'px，不再逐块折叠）；右下角固定按钮：' + out.btn);
+  console.log('✅ 思考折叠补丁已完全移除：无收起按钮、无全局状态、官方折叠行为已恢复（当前 ' + out.blocks + ' 个思考块，高度 ' + JSON.stringify(out.heights) + '）');
 }
 process.exit(ok ? 0 : 3);
