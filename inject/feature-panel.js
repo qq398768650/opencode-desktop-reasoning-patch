@@ -9,6 +9,7 @@
  *   localStorage['oc-feat:time']        = '0' | '1'
  *   localStorage['oc-feat:reveal']      = '0' | '1'
  *   localStorage['oc-feat:workfold']    = '0' | '1'
+ *   localStorage['oc-feat:reason-dbl']  = '0' | '1'
  *   localStorage['oc-feat:width']       = '0' | '1'
  *
  * 其他模块统一用 globalThis.__ocFeatOn$(key) 判断，别自己读 localStorage
@@ -35,6 +36,7 @@
       ['time', '时间用量'],
       ['reveal', '文件定位'],
       ['workfold', '工作中展开'],
+      ['reason-dbl', '双击思考'],
       ['width', '正文宽度']
     ];
     // --skip 掉的功能不注入代码，开关留在条上就是个按了没反应的死按钮

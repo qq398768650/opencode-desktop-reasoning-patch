@@ -1,6 +1,6 @@
 ---
 name: desktop-reasoning-patch
-description: 给 opencode 桌面端（Electron）打四组补丁：①聊天「思考」块流式中展开、思考结束后不立刻折叠（后面最后一块是正文、整轮真结束才直接折，还在调工具/还有下一段思考时都等整块滚出视口上方；折叠时补偿滚动、下方内容不动）、点标题/底部「收起 ▴」/双击空白都能收起、手动开合状态跨重挂载保留；②首页每个会话行悬停时显示垃圾桶删除按钮，点击走官方删除确认框，**按住 Shift 点击直接删（不弹确认框）**，另有「多选删除」模式（右下角悬浮条或会话右键菜单进入，勾选多行一次删完）；③时间与用量（参照 dsh 布局）：每条助手回复的操作按钮行右侧显示「用量 33.2K tok」和完成时间（今天 `14:32`、同年 `10月16日 14:34`、跨年带年份），点用量弹「本轮用量」明细；输入框下方一行三块统计「⟳ 2 轮 37 步 · 97 tok/s」「▤ 1.6M tok · 缓存命中 95%」「◑ 1%」，三块都能点开对应面板（会话统计 / Token 用量 / 上下文已用）；tok/s 只显示在统计行第一块里（参考 pi 的「生成速度」口径：流式中是本轮累计的实时估算、带「约」，结束后落回该轮 tokens ÷ **纯生成时间**——不含 TTFT/网络等待/工具执行；title 里写明 tok 数与秒数）；首页每个会话行右侧显示最后活跃时间；④文件定位：在会话里 **Ctrl+左键点击文件路径**（正文里的路径、编辑/写入文件卡片上的文件名都行），用资源管理器打开所在目录并选中该文件；⑤「工作中」这一行中间有「展开 ▾ / 收起 ▴」按钮，一键展开或收起本轮全部思考与工具组。在老板升级 opencode 桌面端之后（补丁被覆盖），或老板说「思考折叠没了 / 首页删除按钮没了 / 删除太麻烦 / 看不到回复时间 / 看不到速度 / 点路径打不开目录 / 工作中那行没有展开按钮 / 升级后要重新打补丁」时使用。
+description: 给 opencode 桌面端（Electron）打四组补丁：①聊天「思考」块流式中展开、思考结束后不立刻折叠（后面最后一块是正文、整轮真结束才直接折，还在调工具/还有下一段思考时都等整块滚出视口上方；折叠时补偿滚动、下方内容不动）、点标题/底部「收起 ▴」/双击空白都能收起、手动开合状态跨重挂载保留；②首页每个会话行悬停时显示垃圾桶删除按钮，点击走官方删除确认框，**按住 Shift 点击直接删（不弹确认框）**，另有「多选删除」模式（右下角悬浮条或会话右键菜单进入，勾选多行一次删完）；③时间与用量（参照 dsh 布局）：每条助手回复的操作按钮行右侧显示「用量 33.2K tok」和完成时间（今天 `14:32`、同年 `10月16日 14:34`、跨年带年份），点用量弹「本轮用量」明细；输入框下方一行三块统计「⟳ 2 轮 37 步 · 97 tok/s」「▤ 1.6M tok · 缓存命中 95%」「◑ 1%」，三块都能点开对应面板（会话统计 / Token 用量 / 上下文已用）；tok/s 只显示在统计行第一块里（参考 pi 的「生成速度」口径：流式中是本轮累计的实时估算、带「约」，结束后落回该轮 tokens ÷ **纯生成时间**——不含 TTFT/网络等待/工具执行；title 里写明 tok 数与秒数）；首页每个会话行右侧显示最后活跃时间；④文件定位：在会话里 **Ctrl+左键点击文件路径**（正文里的路径、编辑/写入文件卡片上的文件名都行），用资源管理器打开所在目录并选中该文件；⑤「工作中」这一行中间有「展开 ▾ / 收起 ▴」按钮，一键展开或收起本轮全部思考与工具组；⑥双击思考块（标题行或正文都行）= 折叠/展开一次，开关条上的「双击思考」可关。在老板升级 opencode 桌面端之后（补丁被覆盖），或老板说「思考折叠没了 / 首页删除按钮没了 / 删除太麻烦 / 看不到回复时间 / 看不到速度 / 点路径打不开目录 / 工作中那行没有展开按钮 / 双击思考块不能折叠 / 升级后要重新打补丁」时使用。
 ---
 
 # opencode 桌面端补丁（首页会话删除按钮 + 时间/速度显示 + 文件定位 + 工作中展开/收起）
@@ -84,11 +84,13 @@ node check-upstream.mjs --strict        # 有命中就退出码 1
 
 调试口不用管：`apply-patch.mjs` / `restart.mjs` 会调 `debug-port.mjs` 自动挑一个没被 Windows 保留、也没被占用的端口（`--port` 或环境变量 `OC_DEBUG_PORT` 可指定）；`verify.mjs` 不传 `--port` 时自己扫 9222–9400，连上后会打印 `调试口: <port>`。
 
-`verify.mjs` 需要页面上有一个会话、且工具组已经展开（2.2.0+ 思考块在折叠组里）。它检查两件事：思考块恒展开（高度 > 48px，不再有 28px 折叠态）+ 右下角 `[data-oc-fold-all]` 按钮存在且 `position:fixed`。报「没找到思考块」就先点开一个工具组再跑。
+`verify.mjs` 需要页面上有一个会话、且思考块已经长出来（2.2.2 里思考块默认裹在「使用了 N 个工具」的折叠组里，点一下 `[data-component=collapsed-tool-group] button` 就会渲染出来）。它现在检查的是「逐块折叠补丁确实不在了」：不应有 `[data-oc-fold-all]`、不应有 `__ocFoldQ$`，官方折叠行为（`[data-component=reasoning-part]` 标题行 `aria-expanded`）保持原样。
 
-不想开调试口时用静态校验：`node verify.mjs --static`（自动找安装目录，也可 `--asar <path>` 指定某个 asar）——直接检查 asar 里四组补丁的 33 个标记（renderer chunk 30 个 + preload 1 个 + 主进程 2 个），全在才退出码 0。
+不想开调试口时用静态校验：`node verify.mjs --static`（自动找安装目录，也可 `--asar <path>` 指定某个 asar）——直接检查 asar 里各组补丁的 38 个标记（renderer chunk 34 个 + preload 1 个 + 主进程 2 个 + 开关条/双击思考若干），全在才退出码 0。
 
-删除/多选补丁的行为验证：`node verify.mjs --delete`（同样要桌面端带调试口）——检查首页行上有垃圾桶按钮、右下角悬浮条在、`__ocMultiEnter$`/`__ocRegRow$`/`__ocDeleteApi$` 三个全局钩子已注入。**需要先切到首页**（在会话视图里 `[data-session-id]` 为 0，会报失败）。它只做存在性检查，不会真删东西。
+双击思考块的行为验证：`node verify.mjs --reason-dbl` —— 找不到思考块时会先点开一个折叠工具组，然后对第一个可视标题行派发 `click`+`click`+`dblclick`，断言 `aria-expanded` 翻转一次（`flipped=true`）；再往正文（`[data-component=markdown]`/`p`）派发一次 `dblclick`，断言 `bodyDblFlipped=true`（整块都能双击折叠）。需要桌面端带调试口。
+
+删除/多选补丁的行为验证：`node verify.mjs --delete`（同样要桌面端带调试口）——检查首页行上有垃圾桶按钮、右下角悬浮条在、`__ocMultiEnter$`/`__ocRegRow$`/`__ocDeleteApi$` 三个全局钩子已注入。**判断首页要用 `[data-component=home-session-row]`，别用 `[data-session-id]`**（2.2.2 的侧栏 tab 也带这个属性，会话页同样有 19 个）。它只做存在性检查，不会真删东西。
 
 时间/速度补丁的行为验证：`node verify.mjs --time`——在首页检查每行 `[data-oc-home-time]` 有时间；在会话页检查 `[data-slot="text-part-meta"]` 后面有 `[data-oc-done-time]`；速度检查 `__ocSpeedBoot$` 为真、`[data-oc-live-tps]` 和 `[data-oc-tps-wrap]` 存在（静止时也该有数字，流式时是实时值）。它等 2.5s 让 API 数据回来再判定；会话页要有已完成的回复。**当前正在流式输出的会话永远验证不了时间**（没有完成消息就没有 meta 行），要切到一个历史会话再跑；要看速度则必须趁它输出时用 `sample-speed.mjs` 这类采样脚本。
 
@@ -179,14 +181,29 @@ LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar
 
 **为什么不用 `aria-expanded` 之外的状态源**：官方 trigger 的 `aria-expanded` 是唯一可靠的开合真相，自己的 map 会和 React 打架。
 
-### 六、顶部功能开关条（`inject/feature-panel.js`，跟着 D1，`T_FEAT_JS`，**必须第一个注入**）
+### 六、双击思考块标题行 = 折叠/展开一次（`inject/reason-dbl.js`，跟着 D1，`T_REASON_JS`）
 
-标题栏 `[data-slot="titlebar-v2"]` 是官方窗口拖动区（子元素带 `[app-region:no-drag]`），开关条用 `position:absolute;left:50%;top:0;height:100%;transform:translateX(-50%)` 挂在它上面，自身加 `-webkit-app-region:no-drag`，所以能拖动窗口也能点按钮。实测 5 个开关条宽 487px，在 1143px 宽标题栏里 x=328..815 正好居中。
+背景：逐块折叠引擎被上游整组删除后，思考块只剩官方原生折叠（单击标题行切换）。老板要「双击也能折叠」，这里做最小补充。
+
+| 位置 | 改什么 |
+|---|---|
+| renderer 注入 `inject/reason-dbl.js` | 全局 IIFE，`__ocReasonDblBoot$` 防重入，html 上打 `data-oc-reason-dbl="1"` |
+| 监听 | `document.addEventListener('dblclick', …, true)`（capture，先于 React 的冒泡处理） |
+| 命中条件 | `ev.target.closest('[data-component="reasoning-part"]')` —— **整块都算**（标题行、正文、代码块），老板 2026-10-30 明确要「双击正文也折叠」。代价是正文双击选词被 `preventDefault` 吃掉，这是刻意的 |
+| 动作 | `part.querySelector('[data-slot="collapsible-trigger"]').click()` 补一次；`ev.preventDefault()` 防选中 |
+| 为什么补一次 | 真实双击 = `click` + `click` + `dblclick`，官方那两次 click 在 `aria-expanded` 上互相抵消（实测 `false → true → false`），第三下正好净切换一次；不需要读当前状态 |
+| 开关 | `localStorage['oc-feat:reason-dbl']`，默认开；关掉后 `__ocReasonDblBoot$` 不设、监听不挂 |
+
+验证：`node verify.mjs --reason-dbl`（标题行、正文各双击一次，两次都要翻转；详见上面「怎么做」节）。
+
+### 七、顶部功能开关条（`inject/feature-panel.js`，跟着 D1，`T_FEAT_JS`，**必须第一个注入**）
+
+标题栏 `[data-slot="titlebar-v2"]` 是官方窗口拖动区（子元素带 `[app-region:no-drag]`），开关条用 `position:absolute;left:50%;top:0;height:100%;transform:translateX(-50%)` 挂在它上面，自身加 `-webkit-app-region:no-drag`，所以能拖动窗口也能点按钮。实测 6 项时侧栏布局下宽 585px（5 项时 487px），在标题栏里居中。Top tabs 布局下改贴左侧竖排（`data-oc-feat-vert`，见「坑」节）。
 
 | 项 | 说明 |
 |---|---|
 | 存储 | `localStorage['oc-feat:<key>']`，**缺省 = 开**，只有显式 `'0'` 才关（保证没动过的人行为不变） |
-| key | `home-delete`（删除按钮+多选）、`time`（时间用量速度统计）、`reveal`（文件定位）、`workfold`（工作中展开）、`width`（正文宽度拖拽） |
+| key | `home-delete`（删除按钮+多选）、`time`（时间用量速度统计）、`reveal`（文件定位）、`workfold`（工作中展开）、`reason-dbl`（双击思考块折叠）、`width`（正文宽度拖拽） |
 | 读取 | 统一 `globalThis.__ocFeatOn$(key)`，内部 try/catch，localStorage 被禁时返回 true |
 | 生效方式 | 点击 → 写值 → 90ms 后 `location.reload()`。**不做热插拔**：React 那几处（图标/文案/点击）只在渲染时读值，逐模块拆卸不可靠 |
 | 兜底 | `setInterval(build, 1500)`，标题栏被 React 重建时补回节点并同步 `aria-checked` |
@@ -201,7 +218,7 @@ LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar
 - `D_MULTI_JS`：开头 `if (globalThis.__ocFeatOn$ && !__ocFeatOn$(\`home-delete\`)) return;`
 - **注意**：`D3` 把 `data-action` 字面量换成 `home-session-delete` 是静态字符串，开关管不到；行为由 D6 兜住（关掉点击就是归档），只是 DOM 标记名不变，属于内部标识，不影响使用。
 
-### 六、让会话默认展开（改的是设置，不是代码）
+### 八、让会话默认展开（改的是设置，不是代码）
 
 老板要求「会话默认展开」时不用动 chunk——官方 2.2.x 自带的「时间线详情」设置就是干这个的。
 
@@ -274,7 +291,8 @@ LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar
 - **2.2.2：删除按钮是行的兄弟节点，不在行内部**：首页行是 `<button data-component="home-session-row">`，垃圾桶 `<button data-action="home-session-delete">` 挂在行的**父 DIV** 里，所以 `row.querySelector('[data-action=home-session-delete]')` 永远是 null，要用 `row.parentElement.querySelector(...)`。`verify.mjs --delete` 已按这个改。
 - **2.2.2：`localStorage['oc-feat:home-delete']==='0'` 时整段删除补丁早退，`__ocMultiBoot$`/`__ocRowMap$`/`__ocMultiEnter$` 全都不存在**（2026-10-30 实测）：`D_MULTI_JS` 第一句就是 `if (globalThis.__ocFeatOn$ && !__ocFeatOn$('home-delete')) return;`，早退发生在设置任何全局之前。现象很像「补丁没打进去」（页面里其余 `__ocTimeBoot$`/`__ocFileBoot$` 都在，只有 delete 那组全无）。排查顺序：先看 `Object.keys(localStorage).filter(k=>k.startsWith('oc-feat'))`，把它设回 `'1'` 再 `location.reload()`。功能开关条是低透明度的可点元素，用坐标点「主页」时容易误触把某项关掉。
 - **2.2.2：首页活跃时间是 MutationObserver + 15 秒定时器补的，回首页后立刻跑 `verify.mjs --time` 会假报 `homeTimes=[]`（2026-10-30 实测）**：`paintHome()`（`inject/time-stats.js:426`）遍历 `[data-session-id]`，从 `__ocRowMap$.get(id).session.time.updated` 取时间戳 —— 数据一直在（实测 17 行时 `__ocRowMap$` size=17、`feat time=true`、`[data-slot=home-session-labels]` 宿主也在，`[data-oc-home-time]` 稍后就有 17 个），只是渲染完到补绘制之间有空档。`verify.mjs` 已改成最多轮询 8 秒（`[data-oc-home-time]` 出现即返回）；手动排查时先确认元素数 > 0 再下结论，别信一次快照。
-- **2.2.2：界面模式（Top tabs / Side tabs / Inbox）不存在任何本地存储里，只能按 DOM 判**（2026-10-30 实测）：`%APPDATA%\ai.opencode.desktop\opencode.settings` 只有 `tauriMigrated`/`pinchZoomEnabled`/`oldLayoutEligible`/`windowIds`/`firstLaunchOnboardingComplete`/`defaultServerUrl`/`backgroundColor`；localStorage 里没有 interfaceMode 之类的键、`IndexedDB` 目录是空的、`/config` 返回 404。功能开关条因此按 DOM 判：**Top tabs → `[data-slot=titlebar-v2] [data-slot=tab-link]` 有 N 个（实测 9）、`[data-slot=vertical-tabs-sidebar]` 为 null；Side tabs → 标题栏内 0 个、sidebar 存在**（层级是 `titlebar-v2 > titlebar-tabs > titlebar-tab-item > tab-link`）。切换后 1.5 秒内 `applyLayout()` 自动换位，实测 Top tabs 开关条 **106×110 @ (8,415)** 竖排在左侧垂直居中（`data-oc-feat-vert`），Side tabs **487×44 @ (365,0)** 横排在标题栏中间。Top tabs 下左侧没有会话列表（消息区居中留白 ~180px），竖排不会压正文；设置页左侧导航从 x≈180 起，也不重叠。
+- **2.2.2：界面模式（Top tabs / Side tabs / Inbox）不存在任何本地存储里，只能按 DOM 判**（2026-10-30 实测）：`%APPDATA%\ai.opencode.desktop\opencode.settings` 只有 `tauriMigrated`/`pinchZoomEnabled`/`oldLayoutEligible`/`windowIds`/`firstLaunchOnboardingComplete`/`defaultServerUrl`/`backgroundColor`；localStorage 里没有 interfaceMode 之类的键、`IndexedDB` 目录是空的、`/config` 返回 404。功能开关条因此按 DOM 判：**Top tabs → `[data-slot=titlebar-v2] [data-slot=tab-link]` 有 N 个（实测 9）、`[data-slot=vertical-tabs-sidebar]` 为 null；Side tabs → 标题栏内 0 个、sidebar 存在**（层级是 `titlebar-v2 > titlebar-tabs > titlebar-tab-item > tab-link`）。切换后 1.5 秒内 `applyLayout()` 自动换位，实测 Top tabs 开关条 **106×110 @ (8,415)** 竖排在左侧垂直居中（`data-oc-feat-vert`，5 项时），Side tabs 横排在标题栏中间（5 项 487×44 @ (365,0)，6 项 585×44 @ (316,0)）。Top tabs 下左侧没有会话列表（消息区居中留白 ~180px），竖排不会压正文；设置页左侧导航从 x≈180 起，也不重叠。
+- **2.2.2：双击思考块折叠是「整块」生效（标题行 + 正文），正文双击不再选词**（2026-10-30 实现，老板先要标题行、看完改成整块）：真实双击 = `click` + `click` + `dblclick`，官方那两次 click 在 `aria-expanded` 上互相抵消（实测序列 `false → true → false`），所以在 `dblclick`（capture）里补一次 `trigger.click()` 就净切换一次，不需要判断前后状态。正文上双击时官方 click 为 0 次，补一次同样等于切换一次 —— 两种情况共用一套逻辑。实测：正文双击 `true → false`、标题行双击 `false → true`。思考块默认裹在「使用了 N 个工具」折叠组里，`[data-component=reasoning-part]` 一开始是 0；`[data-slot=context-tool-group-trigger]` 在 2.2.2 已经不存在，点开用 `[data-component=collapsed-tool-group] button`（`.click()` 有效，实测 0 → 40 个 part）。
 - **2.2.2：设置页能用 CDP 打开并切布局（验证主题判定时很省事）**：向页面发 `Ctrl+,`（`Input.dispatchKeyEvent` 依次 `rawKeyDown` + `char` + `keyUp`，`modifiers:2`、`key:','`、`code:'Comma'`、`windowsVirtualKeyCode:188`、`nativeVirtualKeyCode:188`）就能打开设置；它不改 URL、没有 `role=dialog`，只能靠 `[data-slot=settings-row-title]` 出现来判定。「偏好设置」页顶部就是三张布局卡片（Top tabs / Side tabs / Inbox），用 `textContent.trim()==='Side tabs'` 找到文本节点、取中心坐标后发真实鼠标三连（`mouseMoved`/`mousePressed`/`mouseReleased`）点一下即可切换，`Escape` 退回应用。**别去改 `opencode.settings` 文件**，那里没有这个键（改了也没用）。
 
 ## 升级后锚点找不到怎么办
@@ -290,7 +308,7 @@ opencode 升级后 minified 代码会变，`apply-patch.mjs` 会明确报「锚�
 - 2.0.30：思考折叠 chunk `/out/renderer/assets/route-CPNDqx0F.js`（355075 → 356889 字节）；删除按钮 chunk `/out/renderer/assets/main-CfL8Gr4d.js`（1321365 → 1321786 字节）；asar 176341661 → 176343896；`jsonLen` 2172835、`dataStart` 2172852 都不变
 - 2.0.32：思考折叠 chunk `/out/renderer/assets/route-BYzALZ62.js`（357215 → 360467 字节，+3252）；删除按钮 chunk `/out/renderer/assets/main-CZyBNj5O.js`（1321667 官方原版 → 1330501，含多选删除 UI + 时间补丁，+8834）；asar 176346919（官方）→ 176359005；`jsonLen` 2172835、`dataStart` 2172852 仍不变
 - 2.1.1：思考折叠 chunk `/out/renderer/assets/route-B8ouoQvI.js`（357032 → 360284 字节，+3252）；删除按钮 chunk `/out/renderer/assets/main-ptWBkiKT.js`（1311929 官方原版 → 1320763，+8834）；asar 176355995（官方）→ 176368081；`jsonLen` 2172835、`dataStart` 2172852 仍不变。这次变的是 minified 辅助函数名：route 里 `x`(effect)/`U`(prop setter) 变成 `V`/`B`（`Y` 现在是 Show 组件，**不能**再当 effect 用）；main 里 `jP`→`hP`（archive 图标）、`B3.Item`→`G4.Item`（右键菜单）、`bie/xie`→`p8/m8`（行按钮开关）
-- 2.2.2：删除按钮+时间 chunk `/out/renderer/assets/main-DApoQvPT.js`（2493582 官方原版 → 2574990，+81408，fc46058 口径：单块折叠整组废除 + 工作中行折叠 + 标题栏功能开关条；2026-10-30 又加了「Top tabs 时开关条竖排到左侧」+2179 字节，之前那版是 2572811 / +79229）；`/out/preload/index.cjs` 832 → 887（+55）；`/out/main/index.js` 55622 → 56795（+1173）；asar 235090929（官方，已存为 `app.asar.bak-2.2.2`）→ **235173565**（+82636，含竖排开关条）。静态 **34 项**全绿，`--delete` / `--time`（会话页 + 首页）/ `verify` 行为验证通过；**同一版不再改 `route-*.js`**（思考折叠由 `1969f87`/`4434dcc` 整组删除，改看 `__ocWorkFoldBoot$` + `data-oc-work-fold` 的工作中行折叠）。**失效的锚点 4 处**（都在 main chunk，`route-*.js` 已彻底不打）：① D1 —— 开关 `,WKt=!1,GKt=500,KKt=250,qKt=200,JKt=[56,38,66,46,30,52];`（结构同上版，变量名全新）；② D4 —— 归档图标 `M(wG,{name:\`archive\`})`（2.2.1 的 `N(AG,…)` → 现在 `M` + `wG`）；③ D7 —— `showDelete:(e,t)=>r.show(()=>M(y,{server:e,session:t}))`；④ D8 —— `M(U$.Item,…)`（SDK 菜单别名 `K$`→`U$`，文案渲染仍是 `Zt(`）。D2/D3/D5/D6/F1/F2 原样可用。**这一版 asar 里带 `main-*.js.map`（12MB），改锚点可直接读源码，比 grep minified 快得多。**
+- 2.2.2：删除按钮+时间 chunk `/out/renderer/assets/main-DApoQvPT.js`（2493582 官方原版 → 2577153，+83571，fc46058 口径：单块折叠整组废除 + 工作中行折叠 + 标题栏功能开关条；2026-10-30 依次加了「Top tabs 时开关条竖排到左侧」+2179（2572811 → 2574990）、「双击思考块折叠」+2163 → 2577153，再把命中范围放宽到整块 +186 → 2577339）；`/out/preload/index.cjs` 832 → 887（+55）；`/out/main/index.js` 55622 → 56795（+1173）；asar 235090929（官方，已存为 `app.asar.bak-2.2.2`）→ **235175914**（+84985，含竖排开关条 + 整块双击思考）。静态 **38 项**全绿，`--delete` / `--time`（会话页 + 首页）/ `--reason-dbl` / `verify` 行为验证通过；**同一版不再改 `route-*.js`**（思考折叠由 `1969f87`/`4434dcc` 整组删除，改看 `__ocWorkFoldBoot$` + `data-oc-work-fold` 的工作中行折叠）。**失效的锚点 4 处**（都在 main chunk，`route-*.js` 已彻底不打）：① D1 —— 开关 `,WKt=!1,GKt=500,KKt=250,qKt=200,JKt=[56,38,66,46,30,52];`（结构同上版，变量名全新）；② D4 —— 归档图标 `M(wG,{name:\`archive\`})`（2.2.1 的 `N(AG,…)` → 现在 `M` + `wG`）；③ D7 —— `showDelete:(e,t)=>r.show(()=>M(y,{server:e,session:t}))`；④ D8 —— `M(U$.Item,…)`（SDK 菜单别名 `K$`→`U$`，文案渲染仍是 `Zt(`）。D2/D3/D5/D6/F1/F2 原样可用。**这一版 asar 里带 `main-*.js.map`（12MB），改锚点可直接读源码，比 grep minified 快得多。**
 - 2.2.1：思考折叠 chunk `/out/renderer/assets/route-Cf4rFCmg.js`（443522 → 443590 字节，+68 —— 单块折叠整套删掉后只剩 `i()=()=>!0` 与两个声明）；删除按钮+时间 chunk `/out/renderer/assets/main-DwDHTs01.js`（2447622 官方原版 → 2518522，+70900，含「收起全部」组级按钮）；`/out/preload/index.cjs` 832 → 887（+55）；`/out/main/index.js` 55623 → 56796（+1173）；asar 233357959（官方，已存为 `app.asar.bak-2.2.1`）→ 233430155（2026-10-28 实测）。静态 33 项全绿。**失效的锚点 5 处**：① P2 —— effect 从 `k(` 变成 `d(`（`X(()=>d(n,\`data-timeline-part-id\`,e.id)),n})()}`，P2_FIND 前缀与内部两处一起改）；② D1 —— 开关 `,YBt=!1,XBt=500,ZBt=250,QBt=200,$Bt=[56,38,66,46,30,52];`（只有 `!1` 变 `!0` 这一处不同，其余变量名全新）；③ D4 —— 归档图标 `M(VG,{name:\`archive\`})` → 新增图标组件走 `N(AG,...)`（挂载函数 M→N，图标组件 VG→AG）；④ D7 —— `M(` → `N(`；⑤ D8 —— `W4.Item` 的 SDK 别名 `J$`→`K$`、委托函数 `Jt(`→`Zt(`。P1/P4/P8/D2/D3/D5/D6/F1/F2 原样可用。
 - 2.2.0：思考折叠 chunk `/out/renderer/assets/route-B6j9WPw6.js`（424406 → 427658 字节，+3252）；删除按钮+时间 chunk `/out/renderer/assets/main-Cs-Uxtxi.js`（2433134 官方原版 → 2498310，+65176（2026-10-28 实测，含 df2082f 统计行跟随会话、d063400 会话页 meta 行回退、tok/s 按会话分桶、平均速度回退、正文宽度拖拽、速度改 pi 的纯生成窗口口径））；`/out/preload/index.cjs` 832 → 887（+55）；`/out/main/index.js` 56505 → 57168（+663）；asar 233258702（官方，已存为 `app.asar.bak-2.2.0`）→ 233327466（2026-10-28 实测，同一套补丁内容，含手柄跟随审查面板）；静态 30 项全绿。**失效的锚点 5 处**：① P2 —— route 里 effect=`X`、prop setter=`k`（实测 `V(()=>` 0 处、`X(()=>k(` 39 处、`H(()=>` 123 处；`V` 已降级成挂载子节点 `V(parent,child)`，`H` 是 memo），原文变成 `X(()=>k(n,`data-timeline-part-id`,e.id)),n})()}`，P2_FIND / P2_REPL 前缀与内部两处 effect 调用一起改；② D1 —— 开关声明 `,f8=!1,p8=500;` 变成 `,fBt=!1,pBt=500,mBt=250,hBt=200,gBt=[56,38,66,46,30,52];`（开关 f8→fBt，且 500 后面还有三个常量，D1_REPL 要保留整段到 `gBt` 数组再追加注入代码）；③ D4 —— 归档图标 `F(VP,{name:`archive`})`→`M(VG,{name:`archive`})`（组件挂载 F→M）；④ D7 —— `F(y,{server…})`→`M(y,{server…})`；⑤ D8 —— `W4.Item`→`J$.Item`、文案渲染 `z`→`Jt`。P1/P4/P8/D2/D3/D5/D6/F1/F2 原样可用。
 - 2.1.4：思考折叠 chunk `/out/renderer/assets/route-BCLDih8W.js`（380688 → 383940 字节，+3252）；删除按钮 chunk `/out/renderer/assets/main-BCYk92jp.js`（1314097 官方原版 → 1361573，+47476，2026-10-27 实测）；`/out/preload/index.cjs` 838 → 893（+55）；`/out/main/index.js` 819139 → 819802（+663）；asar 178068364（官方，已存为 `app.asar.bak-2.1.4`）→ 178119810（2026-10-27 实测）。**失效的锚点 4 处**：① P2 —— effect/prop setter 又从 2.1.3 的 `H`/`V` 换回 2.1.1 的 `V`/`B`，原文变成 `V(()=>B(n,`data-timeline-part-id`,e.id))`，P2_FIND / P2_REPL 前缀与内部两处 effect 调用一起改（实测 `V(()=>` 44 处、`V(()=>B(` 28 处、`H(()=>` 0 处）；② D1 —— 首页按钮开关声明 `,p8=!1,m8=500;` 变成 `,f8=!1,p8=500;`（开关 p8→f8，常量 m8→p8）；③ D4 —— 归档图标组件 `hP`→`VP`；④ D8 —— 右键菜单组件 `G4.Item`→`W4.Item`。P1/P4/P8/D2/D3/D5/D6/D7/F1/F2 原样可用，静态标记 20 项全绿。

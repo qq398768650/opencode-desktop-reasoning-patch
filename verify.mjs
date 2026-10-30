@@ -130,9 +130,13 @@ if (process.argv.includes('--static')) {
     ['文件定位 · 启动标记 __ocFileBoot$', anyChunk('__ocFileBoot$')],
     ['工作中展开/收起 · 启动标记 __ocWorkFoldBoot$', anyChunk('__ocWorkFoldBoot$')],
     ['工作中展开/收起 · 按钮 data-oc-work-fold', anyChunk('data-oc-work-fold')],
+    ['双击思考 · 启动标记 __ocReasonDblBoot$', anyChunk('__ocReasonDblBoot$')],
+    ['双击思考 · 开关 key oc-feat:reason-dbl', anyChunk('reason-dbl')],
     ['功能开关条 · 容器 data-oc-feat-bar', anyChunk('data-oc-feat-bar')],
     ['功能开关条 · 读取函数 __ocFeatOn$', anyChunk('__ocFeatOn$')],
-    ['功能开关条 · 五个开关 key', anyChunk('oc-feat:') || anyChunk("'oc-feat:'")],
+    ['功能开关条 · 开关 key 前缀 oc-feat:', anyChunk('oc-feat:') || anyChunk("'oc-feat:'")],
+    ['双击思考 · 开关 key reason-dbl', anyChunk("'reason-dbl'")],
+    ['双击思考 · html 标记 data-oc-reason-dbl', anyChunk('data-oc-reason-dbl')],
     ['速度按会话隔离 · LIVE_BY 按 sid 分桶', anyChunk('LIVE_BY')],
     ['速度口径 · 每轮实测平均 ST.lastTurn', anyChunk('ST.lastTurn')],
     ['速度口径 · 本轮累计字符 dL.ch', anyChunk('dL.ch')],
@@ -153,6 +157,53 @@ if (process.argv.includes('--static')) {
 }
 
 // ---- 行为验证（--delete）：连桌面端检查首页删除 + 多选补丁是否注入 ----
+// ---- 行为验证（--reason-dbl）：双击思考块标题行 = 折叠/展开一次 ----
+if (process.argv.includes('--reason-dbl')) {
+  const p = await page();
+  console.log('调试页:', p.url);
+  const out = await evalIn(p, `(async () => {
+    const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+    const parts = () => document.querySelectorAll('[data-component="reasoning-part"]').length;
+    // 思考块默认裹在「使用了 N 个工具」折叠组里，先把它点开才有 reasoning-part
+    if (!parts()) {
+      const g = [...document.querySelectorAll('[data-component="collapsed-tool-group"]')].pop();
+      const b = g && g.querySelector('button');
+      if (b) { b.click(); await sleep(1200); }
+    }
+    const vis = () => [...document.querySelectorAll('[data-component="reasoning-part"] [data-slot="collapsible-trigger"]')]
+      .find(b => { const r = b.getBoundingClientRect(); return r.top > 140 && r.bottom < 680 && r.width > 40; });
+    const b = vis();
+    if (!b) return { error: 'no-visible-trigger', parts: parts() };
+    const fire = (type, detail) => b.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, button: 0, detail }));
+    const before = b.getAttribute('aria-expanded');
+    // 真实双击 = click、click、dblclick（官方前两次互相抵消，第三下由补丁补）
+    fire('click', 1); fire('click', 2); fire('dblclick', 2);
+    await sleep(500);
+    const after = b.getAttribute('aria-expanded');
+    // 正文里的双击也折叠（老板 2026-10-30 要求：整个思考块都能双击）
+    const body = b.closest('[data-component="reasoning-part"]').querySelector('[data-component="markdown"], p');
+    let bodyAfter = null;
+    if (body) {
+      const a0 = b.getAttribute('aria-expanded');
+      body.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, button: 0, detail: 2 }));
+      await sleep(400);
+      bodyAfter = { before: a0, after: b.getAttribute('aria-expanded') };
+    }
+    return {
+      boot: !!globalThis.__ocReasonDblBoot$,
+      flag: document.documentElement.getAttribute('data-oc-reason-dbl'),
+      feat: typeof globalThis.__ocFeatOn$ === 'function' ? globalThis.__ocFeatOn$('reason-dbl') : null,
+      parts: parts(), before, after, flipped: before !== after,
+      bodyDbl: bodyAfter, bodyDblFlipped: !!(bodyAfter && bodyAfter.before !== bodyAfter.after),
+    };
+  })()`);
+  console.log(JSON.stringify(out, null, 2));
+  const ok = out && out.boot && out.flag === '1' && out.feat !== false && out.parts > 0
+    && out.flipped && out.bodyDblFlipped === true;
+  console.log(ok ? '✅ 双击思考块（标题行和正文都一样）= 切换一次' : '❌ 双击折叠没生效（见上面字段）');
+  process.exit(ok ? 0 : 3);
+}
+
 if (process.argv.includes('--delete')) {
   const p = await page();
   console.log('调试页:', p.url);

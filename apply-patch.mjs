@@ -12,7 +12,7 @@
 //   node apply-patch.mjs --out x.asar  # 只把打好的 asar 写到 x.asar（不动安装目录、不关进程）
 //   node apply-patch.mjs --restore  # 用官方备份 app.asar.bak-<版本> 还原 app.asar（撤销补丁）
 //   node apply-patch.mjs --skip=home-delete,work-fold  # 跳过指定功能（官方已实现时用）
-//       可跳过的 key: home-delete / time-stats / file-reveal / work-fold / feature-panel
+//       可跳过的 key: home-delete / time-stats / file-reveal / work-fold / reason-dbl / feature-panel
 //   node apply-patch.mjs --no-upstream  # 不查官方更新日志（离线 / 不想等网络时）
 // 备份约定：<install>/resources/app.asar.bak-<官方版本号> 保存官方原版（本脚本会按需自动创建）
 import fs from 'node:fs';
@@ -31,7 +31,7 @@ const OUT = (() => { const i = process.argv.indexOf('--out'); return i >= 0 ? pr
 const DEBUG_PORT = pickPort();
 
 // --skip=key1,key2：跳过官方已经实现/不再需要的功能。每个 key 对应一组注入模块 + 锚点规则。
-const FEATURE_KEYS = ['home-delete', 'time-stats', 'file-reveal', 'work-fold', 'feature-panel'];
+const FEATURE_KEYS = ['home-delete', 'time-stats', 'file-reveal', 'work-fold', 'reason-dbl', 'feature-panel'];
 const SKIP = new Set();
 for (const a of process.argv) {
   if (!a.startsWith('--skip=')) continue;
@@ -219,6 +219,9 @@ const T_FILE_JS = fs.readFileSync(path.join(HERE, 'inject', 'file-reveal.js'), '
 // 第五组：「工作中」这一行中间的 展开/收起 按钮（一键展开本轮全部思考/工具组）
 const T_WORK_JS = fs.readFileSync(path.join(HERE, 'inject', 'work-fold.js'), 'utf8').trim();
 
+// 第六组：双击思考块标题行 = 折叠/展开一次（官方双击会被两次 click 抵消，这里补一次）
+const T_REASON_JS = fs.readFileSync(path.join(HERE, 'inject', 'reason-dbl.js'), 'utf8').trim();
+
 // 第六组：顶部标题栏正中的功能开关条（滑块），逐项开关上面这几组补丁。
 // 必须最先注入：后面几个模块启动时会读 __ocFeatOn$() 判断自己要不要装。
 const T_FEAT_JS = fs.readFileSync(path.join(HERE, 'inject', 'feature-panel.js'), 'utf8').trim();
@@ -236,12 +239,14 @@ function buildD1Repl() {
   if (!skip('time-stats')) avail.push('time');
   if (!skip('file-reveal')) avail.push('reveal');
   if (!skip('work-fold')) avail.push('workfold');
+  if (!skip('reason-dbl')) avail.push('reason-dbl');
   avail.push('width');
   if (!skip('feature-panel')) stmts.push(T_FEAT_JS);
   if (!skip('home-delete')) stmts.push(D_MULTI_JS);
   if (!skip('time-stats')) stmts.push(T_TIME_JS);
   if (!skip('file-reveal')) stmts.push(T_FILE_JS);
   if (!skip('work-fold')) stmts.push(T_WORK_JS);
+  if (!skip('reason-dbl')) stmts.push(T_REASON_JS);
   return ',WKt=' + (skip('home-delete') ? '!1' : '!0') + ',GKt=500,KKt=250,qKt=200,JKt=[56,38,66,46,30,52]'
     + (skip('home-delete') ? '' : ',' + D_TRASH_ICON)
     + ';'
