@@ -112,7 +112,9 @@ if (process.argv.includes('--static')) {
     ['思考折叠 · 收起全部按钮已移除', !anyChunk('data-oc-fold-all')],
     ['首页删除按钮 · 删除动作 home-session-delete', anyChunk('home-session-delete')],
     ['首页删除按钮 · 垃圾桶图标 ZZ_TRASH_ICON', anyChunk('ZZ_TRASH_ICON')],
-    ['首页删除按钮 · 归档动作已移除', !anyChunk('e.onArchiveSession(e.record.session)')],
+    // 开关关掉时要能退回官方归档，所以归档动作现在带着 __ocFeatOn$ guard 故意留着；
+    // 这里改成检查「没有不带 guard 的裸归档调用」。
+    ['首页删除按钮 · 归档动作只剩开关退路', !anyChunk('e.onArchiveSession(e.record.session)') || anyChunk('`home-delete`))return e.onArchiveSession(e.record.session)')],
     ['首页删除按钮 · 归档 data-action 已移除', !anyChunk('`home-session-archive`')],
     ['首页删除按钮 · 多选工具条 data-oc-multi', anyChunk('data-oc-multi')],
     ['首页删除按钮 · 多选入口 __ocMultiEnter$', anyChunk('__ocMultiEnter$')],
@@ -128,6 +130,9 @@ if (process.argv.includes('--static')) {
     ['文件定位 · 启动标记 __ocFileBoot$', anyChunk('__ocFileBoot$')],
     ['工作中展开/收起 · 启动标记 __ocWorkFoldBoot$', anyChunk('__ocWorkFoldBoot$')],
     ['工作中展开/收起 · 按钮 data-oc-work-fold', anyChunk('data-oc-work-fold')],
+    ['功能开关条 · 容器 data-oc-feat-bar', anyChunk('data-oc-feat-bar')],
+    ['功能开关条 · 读取函数 __ocFeatOn$', anyChunk('__ocFeatOn$')],
+    ['功能开关条 · 五个开关 key', anyChunk('oc-feat:') || anyChunk("'oc-feat:'")],
     ['速度按会话隔离 · LIVE_BY 按 sid 分桶', anyChunk('LIVE_BY')],
     ['速度口径 · 每轮实测平均 ST.lastTurn', anyChunk('ST.lastTurn')],
     ['速度口径 · 本轮累计字符 dL.ch', anyChunk('dL.ch')],

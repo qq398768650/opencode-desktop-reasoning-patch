@@ -146,6 +146,7 @@ const D_TRASH_ICON = 'ZZ_TRASH_ICON=()=>{var s=document.createElementNS(`http://
 // v(server,session) 是官方内部删除函数（showDelete 的闭包里可见），data.session.remove(id) + 失效 home-sessions 查询。
 const D_MULTI_JS = '(function(){try{' +
   'if(typeof document==="undefined"||globalThis.__ocMultiBoot$)return;' +
+  'if(globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`))return;' +
   'globalThis.__ocMultiBoot$=1;' +
   'var S=globalThis.__ocMultiState$={on:!1,sel:new Map(),armed:!1};' +
   'var ROW=globalThis.__ocRowMap$=new Map();' +
@@ -201,6 +202,10 @@ const T_FILE_JS = fs.readFileSync(path.join(HERE, 'inject', 'file-reveal.js'), '
 
 // 第五组：「工作中」这一行中间的 展开/收起 按钮（一键展开本轮全部思考/工具组）
 const T_WORK_JS = fs.readFileSync(path.join(HERE, 'inject', 'work-fold.js'), 'utf8').trim();
+
+// 第六组：顶部标题栏正中的功能开关条（滑块），逐项开关上面这几组补丁。
+// 必须最先注入：后面几个模块启动时会读 __ocFeatOn$() 判断自己要不要装。
+const T_FEAT_JS = fs.readFileSync(path.join(HERE, 'inject', 'feature-panel.js'), 'utf8').trim();
 // 右下角固定的「收起全部」悬浮按钮（只收思考块，跟着 __ocFoldQ$ 走，不随滚动）
 
 // 主进程：加一个 oc:reveal-path IPC（用 shell.showItemInFolder，正好是「打开目录 + 选中文件」）
@@ -247,12 +252,12 @@ const MAIN_REVEAL_JS = ';import("electron").then(function(m){try{m.ipcMain.handl
 // 代表消息取行内 `msg_` 前缀 part 中 `time.completed` 最大的那条（行上的 data-message-id 是用户消息 id，
 // 只有 time.created，拿它会一直不显示）。折叠组展开后 text-part-meta 会重新出现，此时走旧路径、跳过回退。
 const D_RULES = [
-  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 时间/用量/速度/会话统计 + 文件定位 + 工作中展开收起', ',WKt=!1,GKt=500,KKt=250,qKt=200,JKt=[56,38,66,46,30,52];', ',WKt=!0,GKt=500,KKt=250,qKt=200,JKt=[56,38,66,46,30,52],' + D_TRASH_ICON + ';' + D_MULTI_JS + ';' + T_TIME_JS + ';' + T_FILE_JS + ';' + T_WORK_JS + ';'],
-  ['D2 tooltip 文案 归档→删除', 'get value(){return e.language.t(`common.archive`)}', 'get value(){return e.language.t(`common.delete`)}'],
+  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 时间/用量/速度/会话统计 + 文件定位 + 工作中展开收起', ',WKt=!1,GKt=500,KKt=250,qKt=200,JKt=[56,38,66,46,30,52];', ',WKt=!0,GKt=500,KKt=250,qKt=200,JKt=[56,38,66,46,30,52],' + D_TRASH_ICON + ';' + T_FEAT_JS + ';' + D_MULTI_JS + ';' + T_TIME_JS + ';' + T_FILE_JS + ';' + T_WORK_JS + ';'],
+  ['D2 tooltip 文案 归档→删除', 'get value(){return e.language.t(`common.archive`)}', 'get value(){return globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`)?e.language.t(`common.archive`):e.language.t(`common.delete`)}'],
   ['D3 动作标识 home-session-archive→delete', '`home-session-archive`', '`home-session-delete`'],
-  ['D4 图标 归档→垃圾桶 + 注册行→会话映射', 'get icon(){return M(wG,{name:`archive`})}', 'get icon(){return globalThis.__ocRegRow$&&globalThis.__ocRegRow$(e.server,e.record.session),globalThis.__ocDeleteApi$=e.onDeleteSession,M(ZZ_TRASH_ICON,{})}'],
-  ['D5 无障碍标签 归档→删除', 'get"aria-label"(){return e.language.t(`common.archive`)}', 'get"aria-label"(){return e.language.t(`common.delete`)}'],
-  ['D6 点击动作 归档→删除 + Shift 免确认', D_ANCHOR, '(function(){var _p=globalThis.__ocSkipConfirm;globalThis.__ocSkipConfirm=!!t.shiftKey;try{e.onDeleteSession(e.server,e.record.session)}finally{globalThis.__ocSkipConfirm=_p}})()'],
+  ['D4 图标 归档→垃圾桶 + 注册行→会话映射', 'get icon(){return M(wG,{name:`archive`})}', 'get icon(){return globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`)?M(wG,{name:`archive`}):(globalThis.__ocRegRow$&&globalThis.__ocRegRow$(e.server,e.record.session),globalThis.__ocDeleteApi$=e.onDeleteSession,M(ZZ_TRASH_ICON,{}))}'],
+  ['D5 无障碍标签 归档→删除', 'get"aria-label"(){return e.language.t(`common.archive`)}', 'get"aria-label"(){return globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`)?e.language.t(`common.archive`):e.language.t(`common.delete`)}'],
+  ['D6 点击动作 归档→删除 + Shift 免确认', D_ANCHOR, '(function(){if(globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`))return e.onArchiveSession(e.record.session);var _p=globalThis.__ocSkipConfirm;globalThis.__ocSkipConfirm=!!t.shiftKey;try{e.onDeleteSession(e.server,e.record.session)}finally{globalThis.__ocSkipConfirm=_p}})()'],
   ['D7 showDelete 支持跳过确认框（走内部删除函数 v）', 'showDelete:(e,t)=>r.show(()=>M(y,{server:e,session:t}))', 'showDelete:(e,t)=>globalThis.__ocSkipConfirm?v(e,t):r.show(()=>M(y,{server:e,session:t}))'],
   ['D8 会话右键菜单加「多选删除」入口', 'M(U$.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[Zt(()=>e.language.t(`common.delete`)),`…`]}})', 'M(U$.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[Zt(()=>e.language.t(`common.delete`)),`…`]}}),M(U$.Item,{onSelect:()=>globalThis.__ocMultiEnter$(e.server,e.record.session),get children(){return[Jt(()=>"多选删除"),`…`]}})'],
 ];
@@ -344,13 +349,17 @@ for (const [label, find, repl] of D_RULES) del = replaceOnce(del, find, repl, la
   if (!txt.includes('ZZ_TRASH_ICON')) throw new Error('补丁自检失败：垃圾桶图标没定义');
   if (!txt.includes('home-session-delete')) throw new Error('补丁自检失败：删除按钮的 data-action 没换掉');
   if (!txt.includes('e.onDeleteSession(e.server,e.record.session)')) throw new Error('补丁自检失败：删除动作没接上');
-  if (txt.includes('e.onArchiveSession(') || txt.includes('`home-session-archive`')) throw new Error('补丁自检失败：还残留归档动作');
+  // 归档动作在「删除按钮」开关关掉时是故意留着当退路的，自检先把自己的 guard 剔掉再看残留
+  const noGuard = txt.split('if(globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`))return e.onArchiveSession(e.record.session);').join('');
+  if (noGuard.includes('e.onArchiveSession(') || noGuard.includes('`home-session-archive`')) throw new Error('补丁自检失败：还残留归档动作');
   if (!txt.includes('showDelete:(e,t)=>globalThis.__ocSkipConfirm?v(e,t):')) throw new Error('补丁自检失败：showDelete 没有接上跳过确认框的分支');
   if (!txt.includes('globalThis.__ocMultiEnter$')) throw new Error('补丁自检失败：多选删除入口没注入');
   if (!txt.includes('__ocRegRow$')) throw new Error('补丁自检失败：会话行→会话映射注册缺失');
   if (!txt.includes('data-oc-multi')) throw new Error('补丁自检失败：多选工具条没注入');
   if (!txt.includes('__ocWorkFoldBoot$')) throw new Error('补丁自检失败：「工作中」展开/收起按钮没注入');
   if (!txt.includes('data-oc-work-fold')) throw new Error('补丁自检失败：「工作中」展开/收起按钮的标记缺失');
+  if (!txt.includes('data-oc-feat-bar')) throw new Error('补丁自检失败：顶部功能开关条没注入');
+  if (!txt.includes('__ocFeatOn$')) throw new Error('补丁自检失败：功能开关的读取函数没注入');
 }
 jobs.push({ path: delPath, content: del, label: '首页删除按钮' });
 

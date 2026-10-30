@@ -344,7 +344,11 @@
       if (timeEl.textContent !== txt) timeEl.textContent = txt;
     };
 
+    // 顶部功能条的开关（inject/feature-panel.js 提供）；没有那层时一律当作开
+    var ON_TIME = !globalThis.__ocFeatOn$ || globalThis.__ocFeatOn$('time');
+    var ON_WIDTH = !globalThis.__ocFeatOn$ || globalThis.__ocFeatOn$('width');
     var paintMsg = function () {
+      if (!ON_TIME) return;
       var metas = document.querySelectorAll('[data-slot=text-part-meta]');
       for (var i = 0; i < metas.length; i++) {
         var sp = metas[i];
@@ -420,6 +424,7 @@
 
     // ---------- 首页会话行时间 ----------
     var paintHome = function () {
+      if (!ON_TIME) return;
       var rows = document.querySelectorAll('[data-session-id]'), i;
       for (i = 0; i < rows.length; i++) {
         var el = rows[i], id = el.getAttribute('data-session-id');
@@ -453,6 +458,11 @@
 
     var statsEl = null;
     var ensureStats = function () {
+      // 统计行和 tok/s 共用这个容器；「时间用量」关掉时连容器都不建（速度也属于这一组）
+      if (!ON_TIME) {
+        if (statsEl && statsEl.parentElement) { try { statsEl.parentElement.removeChild(statsEl); } catch (e) { } statsEl = null; }
+        return null;
+      }
       ensureStatsCss();
       var form = document.querySelector('[data-component="composer"]');
       if (!form) return null;
@@ -486,6 +496,7 @@
     };
 
     var paintStats = function () {
+      if (!ON_TIME) return;
       var el = ensureStats();
       if (!el) return;
       // 用 visibility 而不是 display：保留这 23px 高度，否则新会话数据没到的那一帧整行消失，输入框跟着上下跳
@@ -868,7 +879,7 @@
         loadSid(cur, paintAll);
       }
     };
-    var paintAll = function () { paintMsg(); paintHome(); paintStats(); syncSid(); };
+    var paintAll = function () { if (ON_TIME) { paintMsg(); paintHome(); paintStats(); } syncSid(); };
     var tick = function () {
       if (globalThis.__ocTimeT$) return;
       globalThis.__ocTimeT$ = setTimeout(function () { globalThis.__ocTimeT$ = 0; paintAll(); }, 120);
@@ -995,6 +1006,11 @@
       rwPlace();
     };
     var rwBoot = function () {
+      if (!ON_WIDTH) {
+        if (rwState.grip) { try { rwState.grip.remove(); } catch (e) { } rwState.grip = null; }
+        if (rwState.chip) { try { rwState.chip.remove(); } catch (e) { } rwState.chip = null; }
+        return;
+      }
       if (!rwState.grip) { rwInstall(); if (rwState.grip) return; }
       rwPlace();
     };

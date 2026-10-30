@@ -1,6 +1,8 @@
 (function () {
   try {
     if (globalThis.__ocFileBoot$) return;
+    // 顶部功能条的总开关（inject/feature-panel.js）；没有那层时缺省开
+    if (globalThis.__ocFeatOn$ && !globalThis.__ocFeatOn$('reveal')) return;
     globalThis.__ocFileBoot$ = !0;
 
     var DIR = null;          // 当前会话工作目录（缓存，与 DIR_SID 绑定）

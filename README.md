@@ -171,6 +171,7 @@ node apply-patch.mjs --out patched.asar
 | `apply-patch.mjs` | 主脚本：找安装目录 → 定位删除按钮 chunk（+ preload、主进程）→ 打三组补丁 → 重建 asar（含 dry-run / `--out` / `--write`） |
 | `inject/file-reveal.js` | 文件定位补丁的 renderer 注入源码（`apply-patch.mjs` 读进来内联，不单独部署） |
 | `inject/work-fold.js` | 「工作中」行展开/收起按钮的 renderer 注入源码（`apply-patch.mjs` 读进来内联，不单独部署） |
+| `inject/feature-panel.js` | 顶部功能开关条的 renderer 注入源码（最先注入，见「功能开关条」一节） |
 | `restart.mjs` | 关掉再带 `--remote-debugging-port=<自动挑的端口>` 重开桌面端 |
 | `debug-port.mjs` | 挑调试口：读 Windows 的 TCP 保留端口区间 + `netstat` 占用，从 9222 往后找第一个可用的（`--port` / `OC_DEBUG_PORT` 可覆盖） |
 | `verify.mjs` | 走 CDP 检查折叠行为（`--delete` 查删除/多选补丁，`--time` 查时间补丁，`--static` 只查 asar 标记），PASS 时退出码 0 |

@@ -16,6 +16,8 @@
 (function () {
   try {
     if (typeof document === 'undefined' || globalThis.__ocWorkFoldBoot$) return;
+    // 顶部功能条的总开关（inject/feature-panel.js）；没有那层时缺省开
+    if (globalThis.__ocFeatOn$ && !globalThis.__ocFeatOn$('workfold')) return;
     globalThis.__ocWorkFoldBoot$ = 1;
 
     var SEL_ROW = '[data-timeline-row="bottom-spacer"]';

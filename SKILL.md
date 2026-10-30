@@ -158,6 +158,28 @@ LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar
 
 **为什么不用 `aria-expanded` 之外的状态源**：官方 trigger 的 `aria-expanded` 是唯一可靠的开合真相，自己的 map 会和 React 打架。
 
+### 六、顶部功能开关条（`inject/feature-panel.js`，跟着 D1，`T_FEAT_JS`，**必须第一个注入**）
+
+标题栏 `[data-slot="titlebar-v2"]` 是官方窗口拖动区（子元素带 `[app-region:no-drag]`），开关条用 `position:absolute;left:50%;top:0;height:100%;transform:translateX(-50%)` 挂在它上面，自身加 `-webkit-app-region:no-drag`，所以能拖动窗口也能点按钮。实测 5 个开关条宽 487px，在 1143px 宽标题栏里 x=328..815 正好居中。
+
+| 项 | 说明 |
+|---|---|
+| 存储 | `localStorage['oc-feat:<key>']`，**缺省 = 开**，只有显式 `'0'` 才关（保证没动过的人行为不变） |
+| key | `home-delete`（删除按钮+多选）、`time`（时间用量速度统计）、`reveal`（文件定位）、`workfold`（工作中展开）、`width`（正文宽度拖拽） |
+| 读取 | 统一 `globalThis.__ocFeatOn$(key)`，内部 try/catch，localStorage 被禁时返回 true |
+| 生效方式 | 点击 → 写值 → 90ms 后 `location.reload()`。**不做热插拔**：React 那几处（图标/文案/点击）只在渲染时读值，逐模块拆卸不可靠 |
+| 兜底 | `setInterval(build, 1500)`，标题栏被 React 重建时补回节点并同步 `aria-checked` |
+| 自绘样式 | `<style id="oc-feat-bar-css">`：26×14 轨道 + 10px 白点（开时 `translateX(12px)`、轨道 `#6366f1`），常态 `opacity:.62`、hover 1 |
+
+各模块的判断点：
+
+- `inject/work-fold.js` / `inject/file-reveal.js`：IIFE 顶部 `if (globalThis.__ocFeatOn$ && !__ocFeatOn$(key)) return;`
+- `inject/time-stats.js`：定义 `ON_TIME` / `ON_WIDTH`，`paintMsg` / `paintHome` / `paintStats` 与 `ensureStats`（速度共用这个容器，不加会留下 `data-oc-stats` 空壳）各自开头 return，`rwBoot` 开头关掉并摘掉 `rwState.grip` / `rwState.chip`
+- `D2` / `D5` 文案、`D4` 图标：在 getter 里就地判断，关时回落 `e.language.t(\`common.archive\`)` / `M(wG,{name:\`archive\`})`
+- `D6` 点击：关时 `return e.onArchiveSession(e.record.session)`
+- `D_MULTI_JS`：开头 `if (globalThis.__ocFeatOn$ && !__ocFeatOn$(\`home-delete\`)) return;`
+- **注意**：`D3` 把 `data-action` 字面量换成 `home-session-delete` 是静态字符串，开关管不到；行为由 D6 兜住（关掉点击就是归档），只是 DOM 标记名不变，属于内部标识，不影响使用。
+
 ### 六、让会话默认展开（改的是设置，不是代码）
 
 老板要求「会话默认展开」时不用动 chunk——官方 2.2.x 自带的「时间线详情」设置就是干这个的。

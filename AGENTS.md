@@ -10,6 +10,7 @@
 - 时间 / 用量 / 速度（参照 dsh）：助手回复的操作按钮行右侧显示 `用量 33.2K tok` + 完成时间（今天 `14:32`、同年 `10月16日 14:34`、跨年带年份），点用量弹本轮明细；输入框下方一行三块统计 `⟳ 2 轮 37 步 · 97 tok/s` / `▤ 1.6M tok · 缓存命中 95%` / `◑ 1%`，三块都能点开面板；发送按钮左侧实时显示输出速度（`142 tok/s`，流式时出现，结束后约 2 秒淡出）；首页会话行右侧显示最后活跃时间
 - 文件定位：会话里 Ctrl+左键点文件路径（正文路径、编辑/写入文件卡片上的文件名都行）→ 资源管理器打开所在目录并选中该文件
 - 工作中展开/收起：底部「工作中」这行正中放一个胶囊按钮，一键展开/收起本轮全部思考与工具组（`inject/work-fold.js`）
+- 功能开关条：窗口顶部标题栏正中一排滑块（`inject/feature-panel.js`），逐项开关上面几组补丁；值存 `localStorage['oc-feat:<key>']`，切换后 reload 一次
 
 **目标文件是打包产物，不是源码。** 所有改动都是对 minified chunk 做字符串替换，opencode 一升级锚点就会失效。
 
@@ -19,6 +20,7 @@
 |---|---|
 | `apply-patch.mjs` | 唯一的主脚本：找安装目录 → 定位两个 renderer chunk（+ preload、主进程）→ 打四组补丁 → 串行重建 asar。支持 dry-run / `--out` / `--write` / `--restore` |
 | `inject/file-reveal.js` | 文件定位补丁的 renderer 注入源码，`apply-patch.mjs` 读进来内联进 chunk（不单独部署） |
+| `inject/feature-panel.js` | 顶部功能开关条（`T_FEAT_JS`）。定义 `__ocFeatOn$(key)` / `__ocFeatSet$(key,on)`，必须最先注入 |
 | `commands/reasoning-patch.md` | `/reasoning-patch` 斜杠命令源文件；`--write` 会自动装到 `~/.config/opencode/commands/` |
 | `verify.mjs` | 校验。`--static` = 只查 asar 内 31 个标记（renderer + preload + 主进程）；`--delete` = CDP 查删除/多选补丁注入；`--time` = CDP 查时间/速度；无参数已无行为验证（思考折叠 2026-10-29 移除），只重复静态检查 |
 | `restart.mjs` | 单独重启桌面端并开 `--remote-debugging-port=<自动挑的端口>` |
@@ -42,6 +44,7 @@
 8. **preload / 主进程补丁也要一起打。** 文件定位功能横跨 renderer、preload、主进程三处，只打 renderer 会「有启动标记但点了没反应」。preload 文件是 `/out/preload/index.cjs`（`.cjs` 不是 `.js`）；主进程代码只能追加到 `/out/main/index.js` 末尾当独立语句，用 `import("electron")` + `process.getBuiltinModule(...)` 自取模块，别引用压缩后的单字母变量。
 9. **调试口不写死。** 一律走 `debug-port.mjs` 的 `pickPort()`；`verify.mjs` 保持「不传 `--port` 就扫 9222–9400」的能力。9222 可能被 Windows 保留端口区间占掉，Electron 绑不上不报错，只会让 verify 假失败。
 10. **性能优先，卡顿即砍。** 任何让客户端出现可感知卡顿的功能一律不加 —— 宁可少一个功能，也别多打一组补丁。判定过的反面教材：逐块自动折叠（P1/P4/P8 + fold-all）因为全局 `scroll` capture 全量扫描 DOM + 每次折叠强制重排/滚动补偿，2026-10-29 被整块移除，替代品是「工作中」行的 展开/收起（`inject/work-fold.js`）。新增或回改功能前必须确认：没有在 `scroll` 里全量扫 DOM、没有常驻 `rAF` 循环、没有每个 tick 的强制同步布局（`getBoundingClientRect` / `getComputedStyle` 只能偶尔读）；轮询间隔 ≥400ms 且回调只做 O(几) 次查询。打完用 CDP `Performance.getMetrics` 看 `ScriptDuration` / `RecalcStyleDuration` 有没有明显上涨。
+11. **新功能必须挂开关。** 顶部功能条（`inject/feature-panel.js`）是回滚手段：新增一组补丁时同时加一个 key，并在模块入口写 `if (globalThis.__ocFeatOn$ && !globalThis.__ocFeatOn$('xxx')) return;`；改 React 代码的地方（图标/文案/点击）要在表达式里就地判断，保证关掉后退回官方行为。
 
 ## 验证顺序
 
