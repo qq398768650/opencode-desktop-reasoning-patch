@@ -22,7 +22,7 @@
 | `inject/file-reveal.js` | 文件定位补丁的 renderer 注入源码，`apply-patch.mjs` 读进来内联进 chunk（不单独部署） |
 | `inject/feature-panel.js` | 顶部功能开关条（`T_FEAT_JS`）。定义 `__ocFeatOn$(key)` / `__ocFeatSet$(key,on)`，必须最先注入 |
 | `commands/reasoning-patch.md` | `/reasoning-patch` 斜杠命令源文件；`--write` 会自动装到 `~/.config/opencode/commands/` |
-| `verify.mjs` | 校验。`--static` = 只查 asar 内 31 个标记（renderer + preload + 主进程）；`--delete` = CDP 查删除/多选补丁注入；`--time` = CDP 查时间/速度；无参数已无行为验证（思考折叠 2026-10-29 移除），只重复静态检查 |
+| `verify.mjs` | 校验。`--static` = 只查 asar 内 34 个标记（renderer + preload + 主进程）；`--delete` = CDP 查删除/多选补丁注入；`--time` = CDP 查时间/速度；无参数已无行为验证（思考折叠 2026-10-29 移除），只重复静态检查 |
 | `restart.mjs` | 单独重启桌面端并开 `--remote-debugging-port=<自动挑的端口>` |
 | `debug-port.mjs` | 挑调试口：避开 Windows TCP 保留区间（Hyper-V/WSL/Docker）与已占用端口 |
 | `SKILL.md` | 补丁细节、P1/P2/P4/P8 与 D1–D8 每处改什么、坑、升级后怎么重新定位锚点 |
@@ -51,7 +51,7 @@
 ```bash
 node apply-patch.mjs            # dry-run：全部锚点 OK 才继续
 node apply-patch.mjs --write    # 装（自动关→备份 app.asar.bak-<版本号>→写→开回来）
-node verify.mjs --static        # 30+ 个标记全绿（当前 31）
+node verify.mjs --static        # 34 个标记全绿
 node verify.mjs --delete        # 先切到首页；只查注入，不真删
 node verify.mjs --time          # 时间/速度补丁：首页行时间 + 会话页完成时间 + 速度启动标记
 node sample-speed.mjs           # 趁助手输出时采样实时速度（每 500ms 一次）
@@ -84,4 +84,4 @@ git push origin v2.1.3
 gh release create v2.1.3 --title "v2.1.3 — 适配 opencode 桌面端 2.1.3" --notes "..."
 ```
 
-发布前确认三件事：① 本机桌面端版本 = tag 版本；② `node apply-patch.mjs` dry-run 全 OK、`node verify.mjs --static` 31 项全绿；③ README 的「支持版本」与「历史版本对照」表已加该行。补丁自身的修复（不涉及新锚点）直接进 `main`，不另开 tag。
+发布前确认三件事：① 本机桌面端版本 = tag 版本；② `node apply-patch.mjs` dry-run 全 OK、`node verify.mjs --static` 34 项全绿；③ README 的「支持版本」与「历史版本对照」表已加该行。补丁自身的修复（不涉及新锚点）直接进 `main`，不另开 tag。
