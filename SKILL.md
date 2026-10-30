@@ -40,6 +40,10 @@ cd "C:/Users/JS/.config/opencode/skills/desktop-reasoning-patch" && git pull --f
 ```
 
 - 输出 `Already up to date.` 就直接往下走。
+- 直连 GitHub 超时就加代理：`git -c http.proxy=http://127.0.0.1:7897 -c https.proxy=http://127.0.0.1:7897 pull --ff-only`。
+- 拉失败一般是本地有未提交改动：先 `git stash -u` 备份再拉，别强拉、别 `reset --hard`。
+
+```bash
 # 1. 先看会改什么（dry-run，不动文件、不动进程）
 node apply-patch.mjs
 
