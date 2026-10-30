@@ -234,6 +234,9 @@ const MAIN_REVEAL_JS = ';import("electron").then(function(m){try{m.ipcMain.handl
     'm.shell.showItemInFolder(p);return !0' +
   '}catch(x){return !1}})}catch(x){}});';
 
+// 2.2.2（/out/renderer/assets/main-DApoQvPT.js）：声明锚点变成 `,WKt=!1,GKt=500,KKt=250,qKt=200,JKt=[56,38,66,46,30,52];`；
+// 图标组件 wG + 挂载 M（`M(wG,{name:`archive`})`）、showDelete 里也是 `M(y,…)`、右键菜单 `M(U$.Item,…)`。
+// D2/D3/D5/D6/F1/F2 原样可用；2.2.2 起 asar 里带 main-*.js.map，改锚点可以直接读源码定位。
 // 2.2.0：main chunk 的 minified 名字又换了一轮 —— 行按钮开关 f8→fBt（同一声明里还多了 mBt/hBt/gBt）、
 // 组件挂载 F→M（`M(Comp,{...})`，`L(parent,child)`）、图标组件 VP→VG、右键菜单 W4.Item→J$.Item、
 // 菜单文案渲染 z→Jt。声明锚点原文：
@@ -244,14 +247,14 @@ const MAIN_REVEAL_JS = ';import("electron").then(function(m){try{m.ipcMain.handl
 // 代表消息取行内 `msg_` 前缀 part 中 `time.completed` 最大的那条（行上的 data-message-id 是用户消息 id，
 // 只有 time.created，拿它会一直不显示）。折叠组展开后 text-part-meta 会重新出现，此时走旧路径、跳过回退。
 const D_RULES = [
-  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 时间/用量/速度/会话统计 + 文件定位 + 收起全部', ',YBt=!1,XBt=500,ZBt=250,QBt=200,$Bt=[56,38,66,46,30,52];', ',YBt=!0,XBt=500,ZBt=250,QBt=200,$Bt=[56,38,66,46,30,52],' + D_TRASH_ICON + ';' + D_MULTI_JS + ';' + T_TIME_JS + ';' + T_FILE_JS + ';' + T_WORK_JS + ';'],
+  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 时间/用量/速度/会话统计 + 文件定位 + 工作中展开收起', ',WKt=!1,GKt=500,KKt=250,qKt=200,JKt=[56,38,66,46,30,52];', ',WKt=!0,GKt=500,KKt=250,qKt=200,JKt=[56,38,66,46,30,52],' + D_TRASH_ICON + ';' + D_MULTI_JS + ';' + T_TIME_JS + ';' + T_FILE_JS + ';' + T_WORK_JS + ';'],
   ['D2 tooltip 文案 归档→删除', 'get value(){return e.language.t(`common.archive`)}', 'get value(){return e.language.t(`common.delete`)}'],
   ['D3 动作标识 home-session-archive→delete', '`home-session-archive`', '`home-session-delete`'],
-  ['D4 图标 归档→垃圾桶 + 注册行→会话映射', 'get icon(){return N(AG,{name:`archive`})}', 'get icon(){return globalThis.__ocRegRow$&&globalThis.__ocRegRow$(e.server,e.record.session),globalThis.__ocDeleteApi$=e.onDeleteSession,N(ZZ_TRASH_ICON,{})}'],
+  ['D4 图标 归档→垃圾桶 + 注册行→会话映射', 'get icon(){return M(wG,{name:`archive`})}', 'get icon(){return globalThis.__ocRegRow$&&globalThis.__ocRegRow$(e.server,e.record.session),globalThis.__ocDeleteApi$=e.onDeleteSession,M(ZZ_TRASH_ICON,{})}'],
   ['D5 无障碍标签 归档→删除', 'get"aria-label"(){return e.language.t(`common.archive`)}', 'get"aria-label"(){return e.language.t(`common.delete`)}'],
   ['D6 点击动作 归档→删除 + Shift 免确认', D_ANCHOR, '(function(){var _p=globalThis.__ocSkipConfirm;globalThis.__ocSkipConfirm=!!t.shiftKey;try{e.onDeleteSession(e.server,e.record.session)}finally{globalThis.__ocSkipConfirm=_p}})()'],
-  ['D7 showDelete 支持跳过确认框（走内部删除函数 v）', 'showDelete:(e,t)=>r.show(()=>N(y,{server:e,session:t}))', 'showDelete:(e,t)=>globalThis.__ocSkipConfirm?v(e,t):r.show(()=>N(y,{server:e,session:t}))'],
-  ['D8 会话右键菜单加「多选删除」入口', 'N(K$.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[Zt(()=>e.language.t(`common.delete`)),`…`]}})', 'N(K$.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[Zt(()=>e.language.t(`common.delete`)),`…`]}}),N(K$.Item,{onSelect:()=>globalThis.__ocMultiEnter$(e.server,e.record.session),get children(){return[Jt(()=>"多选删除"),`…`]}})'],
+  ['D7 showDelete 支持跳过确认框（走内部删除函数 v）', 'showDelete:(e,t)=>r.show(()=>M(y,{server:e,session:t}))', 'showDelete:(e,t)=>globalThis.__ocSkipConfirm?v(e,t):r.show(()=>M(y,{server:e,session:t}))'],
+  ['D8 会话右键菜单加「多选删除」入口', 'M(U$.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[Zt(()=>e.language.t(`common.delete`)),`…`]}})', 'M(U$.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[Zt(()=>e.language.t(`common.delete`)),`…`]}}),M(U$.Item,{onSelect:()=>globalThis.__ocMultiEnter$(e.server,e.record.session),get children(){return[Jt(()=>"多选删除"),`…`]}})'],
 ];
 
 function replaceOnce(content, find, repl, label) {
