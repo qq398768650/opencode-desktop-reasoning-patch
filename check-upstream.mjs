@@ -87,6 +87,7 @@ function fetchBody(version, force) {
     try { return { body: fs.readFileSync(cache, 'utf8'), cached: true }; } catch { }
   }
   const gh = ghBin();
+  let error = 'gh 不可用（没装 GitHub CLI，路径也不在 C:\\Program Files\\GitHub CLI\\gh.exe）';
   if (gh) {
     const r = spawnSync(gh, ['release', 'view', 'v' + version, '-R', REPO, '--json', 'body,tagName,publishedAt', '-q', '.body'], {
       encoding: 'utf8', timeout: 20000, windowsHide: true,
@@ -95,8 +96,10 @@ function fetchBody(version, force) {
       try { fs.writeFileSync(cache, r.stdout, 'utf8'); } catch { }
       return { body: r.stdout, cached: false };
     }
+    error = r.error ? String(r.error.message || r.error)
+      : ((r.stderr || '').trim() || ('gh 退出码 ' + r.status));
   }
-  return { body: null, cached: false, error: (r && r.stderr) || 'gh 不可用' };
+  return { body: null, cached: false, error };
 }
 
 function hitLines(body, patterns) {

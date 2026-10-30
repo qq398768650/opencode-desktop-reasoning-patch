@@ -53,6 +53,15 @@
         'display:flex;align-items:center;gap:14px;pointer-events:auto;',
         '-webkit-app-region:no-drag;z-index:30;opacity:.62;transition:opacity .15s}',
         '[data-oc-feat-bar]:hover{opacity:1}',
+        // 「Top tabs」布局（标题栏里是浏览器式标签）时，标题栏中间被标签占满，
+        // 开关条改成贴左侧边缘、竖向排列（垂直居中），别去挤标签
+        '[data-oc-feat-bar][data-oc-feat-vert]{position:fixed;left:8px;top:50%;height:auto;',
+        'transform:translateY(-50%);flex-direction:column;align-items:flex-start;gap:2px;',
+        'padding:6px 8px;border-radius:10px;background:rgba(24,24,27,.72);backdrop-filter:blur(8px);',
+        'box-shadow:0 6px 20px rgba(0,0,0,.35);z-index:40;opacity:.45}',
+        '[data-oc-feat-bar][data-oc-feat-vert]:hover{opacity:1}',
+        '[data-oc-feat-bar][data-oc-feat-vert] [data-oc-feat]{width:100%}',
+        '[data-oc-feat-bar][data-oc-feat-vert] [data-oc-feat] .l{font-size:10px}',
         '[data-oc-feat]{display:inline-flex;align-items:center;gap:6px;cursor:pointer;',
         'font-size:11px;line-height:1;color:inherit;background:none;border:0;padding:2px 4px;',
         'border-radius:6px;white-space:nowrap;font-family:inherit}',
@@ -67,6 +76,28 @@
         '[data-oc-feat][aria-checked="true"] .l{opacity:.95}'
       ].join('');
       (document.head || document.documentElement).appendChild(s);
+    }
+
+    // 判断当前是不是「Top tabs」布局（这个设置不存在 localStorage / IndexedDB / opencode.settings，
+    // 只能按 DOM 判）：顶部标签模式下标签直接长在标题栏里（侧栏里没有 tab-link）；
+    // 侧栏模式反过来 —— 标题栏没有标签、但 [data-slot=vertical-tabs-sidebar] 在；
+    // Inbox（实验性）用 [data-slot=sidebar-inbox] 当左侧列表，同样不算顶部模式。
+    // 两个特征都取不到时按「顶部模式」处理（宁可竖排，也不要横条压在标签上）。
+    function isTopTabs() {
+      try {
+        var header = document.querySelector('[data-slot="titlebar-v2"]');
+        if (!header) return false;
+        if (header.querySelector('[data-slot="tab-link"],[data-slot="titlebar-tab-item"]')) return true;
+        if (document.querySelector('[data-slot="vertical-tabs-sidebar"]')) return false;
+        if (document.querySelector('[data-slot="sidebar-inbox"]')) return false;
+        return true;
+      } catch (e) { return false; }
+    }
+
+    function applyLayout(bar) {
+      if (!bar) return;
+      if (isTopTabs()) bar.setAttribute('data-oc-feat-vert', '');
+      else bar.removeAttribute('data-oc-feat-vert');
     }
 
     function build() {
@@ -113,6 +144,7 @@
         bar.appendChild(b);
       }
       header.appendChild(bar);
+      applyLayout(bar);
       return bar;
     }
 
@@ -121,6 +153,8 @@
     var timer = setInterval(function () {
       var bar = build();
       if (!bar) return;
+      // 布局模式（Top tabs / 侧栏）切换后要立刻跟着换位置
+      applyLayout(bar);
       // 标题栏被 React 重建时把条子补回去
       for (var i = 0; i < ITEMS.length; i++) {
         var el = bar.querySelector('[data-oc-feat="' + ITEMS[i][0] + '"]');

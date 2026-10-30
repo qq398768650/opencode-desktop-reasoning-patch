@@ -156,8 +156,19 @@ if (process.argv.includes('--static')) {
 if (process.argv.includes('--delete')) {
   const p = await page();
   console.log('调试页:', p.url);
-  const out = await evalIn(p, `(() => {
-    const rows = [...document.querySelectorAll('[data-session-id]')];
+  const out = await evalIn(p, `(async () => {
+    // 2.2.2：首页面板进入后可能 2 秒就自己切走，导航与取数放同一次求值（详见 SKILL.md「坑」）
+    // 2.2.2：侧栏 tab 也有 [data-session-id]，判断首页必须用 [data-component=home-session-row]
+    if (!document.querySelector('[data-component="home-session-row"]')) {
+      const hb = document.querySelector('[data-action="vertical-tabs-home"]');
+      if (hb) {
+        hb.click();
+        for (let i = 0; i < 40 && !document.querySelector('[data-component="home-session-row"]'); i++) {
+          await new Promise(r => setTimeout(r, 100));
+        }
+      }
+    }
+    const rows = [...document.querySelectorAll('[data-component="home-session-row"]')];
     const bar = document.querySelector('[data-oc-multi]');
     return {
       multiEnter: typeof globalThis.__ocMultiEnter$,
@@ -166,7 +177,8 @@ if (process.argv.includes('--delete')) {
       bar: !!bar, barText: bar ? bar.textContent.trim() : null, barDisplay: bar ? bar.style.display : null,
       rows: rows.length,
       deleteButtons: document.querySelectorAll('[data-action="home-session-delete"]').length,
-      firstRowHasButton: rows.length ? !!rows[0].querySelector('[data-action="home-session-delete"]') : null,
+      // 2.2.2：删除按钮是行的兄弟节点（挂在行的父容器里），不在 row 元素内部
+      firstRowHasButton: rows.length ? !!(rows[0].parentElement && rows[0].parentElement.querySelector('[data-action="home-session-delete"]')) : null,
     };
   })()`);
   console.log(JSON.stringify(out, null, 2));
@@ -181,8 +193,24 @@ if (process.argv.includes('--time')) {
   const p = await page();
   console.log('调试页:', p.url);
   const out = await evalIn(p, `(async () => {
-    await new Promise(r => setTimeout(r, 2500));
+    await new Promise(r => setTimeout(r, 800));
+    // 2.2.2：2.2.2 的侧栏 tab 也会让 [data-session-id] 有值，判断「在不在首页」必须用首页专属的
+    // [data-component=home-session-row]；只有既不在首页、也没有 composer 时才点「主页」自己导航。
+    if (!document.querySelector('[data-component="home-session-row"]') && !document.querySelector('[data-component="composer"]')) {
+      const hb = document.querySelector('[data-action="vertical-tabs-home"]');
+      if (hb) {
+        hb.click();
+        for (let i = 0; i < 40 && !document.querySelector('[data-component="home-session-row"]'); i++) {
+          await new Promise(r => setTimeout(r, 100));
+        }
+      }
+    }
+    // 首页行先渲染列表、再由 MutationObserver 补上活跃时间，刚进首页就取会是空数组（2026-10-30 实测，假报 ❌）
+    for (let i = 0; i < 20 && document.querySelectorAll('[data-component="home-session-row"]').length && !document.querySelector('[data-oc-home-time]'); i++) {
+      await new Promise(r => setTimeout(r, 100));
+    }
     return {
+      homeRows: document.querySelectorAll('[data-component="home-session-row"]').length,
       boot: !!globalThis.__ocTimeBoot$,
       cache: globalThis.__ocMsgTime$ ? globalThis.__ocMsgTime$.size : -1,
       rows: document.querySelectorAll('[data-session-id]').length,
@@ -216,13 +244,13 @@ if (process.argv.includes('--time')) {
     };
   })()`);
   console.log(JSON.stringify(out, null, 2));
-  const okHome = out.rows > 0 ? out.homeTimes.length > 0 : true;
+  const okHome = out.homeRows > 0 ? out.homeTimes.length > 0 : true;
   // 2.2.0：折叠工具组时 text-part-meta 是 0（正文 part 不渲染），补丁改按 turn 行挂 [data-oc-msg-line]，
   // 两种宿主任意一种有就不算失败
   const okMsg = (out.metas > 0 || out.msgLines > 0) ? out.doneTimes.length > 0 : true;
   // 首页没有输入框也没有统计行，速度/tok-s 布局只存在于会话页 —— 在首页时这两项按「不适用」处理，
   // 否则切到首页验首页活跃时间会永远报失败（2026-10-24 实测）
-  const onHome = out.rows > 0 && !out.statsLayout;
+  const onHome = out.homeRows > 0 && !out.statsLayout;
   const okTps = onHome ? true : (out.speedBoot && out.speedEl > 0 && out.tpsWrap);
   const sl = out.statsLayout;
   const okLayout = onHome ? true : (!!sl && sl.display === 'flex' && sl.centered && sl.gaps.length >= 2 && sl.gaps.every((g) => g >= 16));
