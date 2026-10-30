@@ -50,8 +50,8 @@ node apply-patch.mjs
 # 2. 真正写入（会自动：关掉桌面端 → 备份官方版为 app.asar.bak-<版本号> → 写补丁 → 再开回来）
 node apply-patch.mjs --write
 
-# 3. 等它起来后验证：点一下能收起/展开，历史思考块默认折叠
-node verify.mjs
+# 3. 等它起来后验证：静态标记 + 首页删除 / 时间用量（思考折叠已移除，verify 不再做行为验证）
+node verify.mjs --static
 
 # 4. 想撤销补丁、回到官方原版（自动关桌面端 → 用 app.asar.bak-<版本号> 盖回 → 再开回来）
 node apply-patch.mjs --restore
