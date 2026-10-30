@@ -1,9 +1,9 @@
 ---
 name: desktop-reasoning-patch
-description: 给 opencode 桌面端（Electron）打四组补丁：①聊天「思考」块流式中展开、思考结束后不立刻折叠（后面最后一块是正文、整轮真结束才直接折，还在调工具/还有下一段思考时都等整块滚出视口上方；折叠时补偿滚动、下方内容不动）、点标题/底部「收起 ▴」/双击空白都能收起、手动开合状态跨重挂载保留；②首页每个会话行悬停时显示垃圾桶删除按钮，点击走官方删除确认框，**按住 Shift 点击直接删（不弹确认框）**，另有「多选删除」模式（右下角悬浮条或会话右键菜单进入，勾选多行一次删完）；③时间与用量（参照 dsh 布局）：每条助手回复的操作按钮行右侧显示「用量 33.2K tok」和完成时间（今天 `14:32`、同年 `10月16日 14:34`、跨年带年份），点用量弹「本轮用量」明细；输入框下方一行三块统计「⟳ 2 轮 37 步 · 97 tok/s」「▤ 1.6M tok · 缓存命中 95%」「◑ 1%」，三块都能点开对应面板（会话统计 / Token 用量 / 上下文已用）；tok/s 只显示在统计行第一块里（参考 pi 的「生成速度」口径：流式中是本轮累计的实时估算、带「约」，结束后落回该轮 tokens ÷ **纯生成时间**——不含 TTFT/网络等待/工具执行；title 里写明 tok 数与秒数）；首页每个会话行右侧显示最后活跃时间；④文件定位：在会话里 **Ctrl+左键点击文件路径**（正文里的路径、编辑/写入文件卡片上的文件名都行），用资源管理器打开所在目录并选中该文件；⑤「工作中」这一行中间有「展开 ▾ / 收起 ▴」按钮，一键展开或收起本轮全部思考与工具组；⑥双击思考块（标题行或正文都行）= 折叠/展开一次，开关条上的「双击思考」可关。在老板升级 opencode 桌面端之后（补丁被覆盖），或老板说「思考折叠没了 / 首页删除按钮没了 / 删除太麻烦 / 看不到回复时间 / 看不到速度 / 点路径打不开目录 / 工作中那行没有展开按钮 / 双击思考块不能折叠 / 升级后要重新打补丁」时使用。
+description: 给 opencode 桌面端（Electron）打十余组补丁：①聊天「思考」块流式中展开、思考结束后不立刻折叠（后面最后一块是正文、整轮真结束才直接折，还在调工具/还有下一段思考时都等整块滚出视口上方；折叠时补偿滚动、下方内容不动）、点标题/底部「收起 ▴」/双击空白都能收起、手动开合状态跨重挂载保留；②首页每个会话行悬停时显示垃圾桶删除按钮，点击走官方删除确认框，**按住 Shift 点击直接删（不弹确认框）**，另有「多选删除」模式（右下角悬浮条或会话右键菜单进入，勾选多行一次删完）；③时间与用量（参照 dsh 布局）：每条助手回复的操作按钮行右侧显示「用量 33.2K tok」和完成时间（今天 `14:32`、同年 `10月16日 14:34`、跨年带年份），点用量弹「本轮用量」明细；输入框下方一行三块统计「⟳ 2 轮 37 步 · 97 tok/s」「▤ 1.6M tok · 缓存命中 95%」「◑ 1%」，三块都能点开对应面板（会话统计 / Token 用量 / 上下文已用）；tok/s 只显示在统计行第一块里（参考 pi 的「生成速度」口径：流式中是本轮累计的实时估算、带「约」，结束后落回该轮 tokens ÷ **纯生成时间**——不含 TTFT/网络等待/工具执行；title 里写明 tok 数与秒数）；首页每个会话行右侧显示最后活跃时间；④文件定位：在会话里 **Ctrl+左键点击文件路径**（正文里的路径、编辑/写入文件卡片上的文件名都行），用资源管理器打开所在目录并选中该文件；⑤「工作中」这一行中间有「展开 ▾ / 收起 ▴」按钮，一键展开或收起本轮全部思考与工具组；⑥双击思考块（标题行或正文都行）= 折叠/展开一次，开关条上的「双击思考」可关；⑦关掉最后一个文件标签页时自动收起右侧审查栏；⑧首页会话右键菜单顶部加「置顶 / 取消置顶」（CSS order 排序，不搬 DOM）；⑨兜底修 2.2.2 的「点击丢失」（审查栏的 x、折叠按钮只有 pointerdown 没有 click，是上游 bug）；⑩修官方 2.2.2 打包坏掉的 `pane-*.js`（顶层 `const n`/`var n` 重名，导致 45 个 browser 工具和内置浏览器整套消失，与 GitHub issue 60369 同因）；⑪「执行 / Shell」工具卡默认折叠，且「使用了 N 个…」汇总组手动展开后保持展开、点开时组内子项一律是折叠的（不连带全展开）。在老板升级 opencode 桌面端之后（补丁被覆盖），或老板说「思考折叠没了 / 首页删除按钮没了 / 删除太麻烦 / 看不到回复时间 / 看不到速度 / 点路径打不开目录 / 工作中那行没有展开按钮 / 双击思考块不能折叠 / 点 x 关不掉标签页 / 关完标签页审查栏不收 / 右键会话没有置顶 / browser 工具和内置浏览器没了 / 点开汇总组里面的思考全展开了 / 执行卡片没有默认收起 / 升级后要重新打补丁」时使用。
 ---
 
-# opencode 桌面端补丁（首页会话删除按钮 + 时间/速度显示 + 文件定位 + 工作中展开/收起）
+# opencode 桌面端补丁（删除按钮 + 时间/速度 + 文件定位 + 工作中展开 + 空页折叠 + 会话置顶 + 点击修复 + browser pane 修复）
 
 ## 背景
 
@@ -77,7 +77,7 @@ node check-upstream.mjs --since 2.2.0   # 查 2.2.0 之后所有版本
 node check-upstream.mjs --strict        # 有命中就退出码 1
 ```
 
-`--skip` 的功能名：`home-delete` / `time-stats` / `file-reveal` / `work-fold` / `feature-panel`。例：`node apply-patch.mjs --skip=work-fold --write`。不想查日志加 `--no-check`。
+`--skip` 的功能名：`home-delete` / `time-stats` / `file-reveal` / `work-fold` / `reason-dbl` / `feature-panel` / `pane-fold` / `session-pin` / `click-fix` / `browser-pane`。例：`node apply-patch.mjs --skip=work-fold --write`。不想查日志加 `--no-check`。
 
 注意它只做提示、不做判断：命中关键词 ≠ 官方做了同一件事（官方说 activity pill 能展开 shell 输出，不等于我们的「工作中」行折叠该删），报告会给原文，由人拍板。
 
@@ -203,7 +203,7 @@ LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar
 | 项 | 说明 |
 |---|---|
 | 存储 | `localStorage['oc-feat:<key>']`，**缺省 = 开**，只有显式 `'0'` 才关（保证没动过的人行为不变） |
-| key | `home-delete`（删除按钮+多选）、`time`（时间用量速度统计）、`reveal`（文件定位）、`workfold`（工作中展开）、`reason-dbl`（双击思考块折叠）、`width`（正文宽度拖拽） |
+| key | `home-delete`（删除按钮+多选）、`time`（时间用量速度统计）、`reveal`（文件定位）、`workfold`（工作中展开）、`reason-dbl`（双击思考块折叠）、`pane-fold`（空页折叠）、`session-pin`（会话置顶）、`click-fix`（点击修复）、`width`（正文宽度拖拽） |
 | 读取 | 统一 `globalThis.__ocFeatOn$(key)`，内部 try/catch，localStorage 被禁时返回 true |
 | 生效方式 | 点击 → 写值 → 90ms 后 `location.reload()`。**不做热插拔**：React 那几处（图标/文案/点击）只在渲染时读值，逐模块拆卸不可靠 |
 | 兜底 | `setInterval(build, 1500)`，标题栏被 React 重建时补回节点并同步 `aria-checked` |
@@ -236,6 +236,69 @@ LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar
 **验证**：会话里 `[data-component="collapsed-tool-group"]` 数量为 **0**，`[data-component="reasoning-part"]` 里 `button[aria-expanded="true"]`，且 reasoning 区块高度是全文高度（几百上千 px）而不是一行。
 
 **注意**：这是运行时数据不是补丁，`--restore` 不会动它；桌面端重置设置或换机后要重做一遍。**当前状态（2026-10-29）：老板试过全展开后主动要求改回官方默认 `grouped`，所以现在保持 grouped，本节只作为需要时的操作手册。**
+
+### 九、关掉最后一个标签页 → 自动收起审查栏（`inject/pane-fold.js`，跟着 D1，`T_PANEFOLD_JS`）
+
+- 观察 `body`（subtree），`touchesPane()` 只认 `#review-panel` / `[role=tablist]` / `[role=tab]` 的增删，其他 DOM 抖动直接 return。
+- **判定必须是「上一轮 > 0，这一轮 === 0」**：首次 `last = -1` 只记录不动作，否则「点开审查栏」那一刻 tab 数从无到有/从有到无会把刚打开的栏又关掉。节流 120ms。
+- 折叠动作一律走 `document.querySelector('[aria-label="切换审查"]').click()`（别自己改 style，官方有 `--panel-hold-width` 动画锁）。
+
+### 十、首页会话右键「置顶 / 取消置顶」（`inject/session-pin.js` + `P1`）
+
+排序用 CSS `order`，**不搬 DOM**（Solid 用节点引用做 diff，搬节点会乱）：
+
+- 存储 `localStorage['oc-pin-sessions']` = `[{id,title}]`，下标就是置顶顺序。
+- `apply()` 遍历 `[data-slot="sidebar-inbox-item"]`，按 `titleOf()`（第二行 `span[dir="auto"]` 的文本）匹配，设 `style.order = -1000 + idx`，加 `data-oc-pinned`（`box-shadow: inset 2px 0 0 #6366f1`）。Solid 会清掉 inline style，所以挂 MutationObserver + 150ms 节流持续补。
+
+**两个大坑（都是实测踩出来的）：**
+
+1. **2.2.2 有两套会话菜单**。b) 首页会话列表的 ContextMenu 才是老板日常用的那个，它的 props 只有 `{archived,onArchive,onUnarchive,onDelete}`，**拿不到 session.id**。所以 `session-pin.js` 用 `document.addEventListener('contextmenu', …, true)` 把「这次右键的是哪一行」记进 `globalThis.__ocPinCurrent$`，菜单项无参调用 `__ocPinToggle$()` / `__ocPinLabel$()`，用 `targetTitle()` 兜底。
+2. **`P1` 的锚点整段替换 `get fallback(){…}`，不能只替换里面那一项**。原来写 `P1_CTX_ITEM + CTX_MENU_ANCHOR` 拼出来是 `return A,B`，逗号运算符只返回 `B`，置顶项被静默吃掉（菜单只剩「归档|删除」，构建却报 OK）。正确写法是 `get fallback(){return[A,B]}`，见 `P1_CTX_FIND` / `P1_CTX_REPL`。
+
+菜单项文案用 `get children(){return globalThis.__ocPinLabel$?__ocPinLabel$():'置顶'}` 直接返回字符串（不要套 `Zt`/`Jt`，也别拼 `'…'`，置顶不是要弹窗的项）。
+
+### 十一、点击丢失兜底（`inject/click-fix.js`，跟着 D1，`T_CLICKFIX_JS`）
+
+- 症状：审查栏的 x、折叠按钮「点了没反应」，但 JS `.click()` 有效。
+- 根因（2.2.2 上游 bug，与我们补丁无关）：CDP 事件日志只有 `pointerdown → pointerup`，**没有 mousedown/mouseup/click**；`pointerdown` 的 target（按钮内 `<svg><use>`）在 `pointerup` 时 `isConnected === false` —— 按下瞬间 Solid 重建了节点，Chromium 因此不合成 click。同排的「添加标签页」序列完整，可作对照。
+- 兜底逻辑：capture `pointerdown` 记坐标 + `got=false`；capture `click` 置 `got=true`；capture `pointerup` 后 `setTimeout(0)` 里若还没 `got`、位移 ≤8px、1500ms 内，则 `document.elementFromPoint()` → `closest('button,[role="button"],a[href]')` → `.click()`。跳过 `disabled` / `aria-disabled="true"`。
+- 标记 `__ocClickFixBoot$` / `<html data-oc-click-fix="1">`。已验证：真实鼠标点折叠按钮 480→0、真实点非活跃 tab 的 x 能关。
+
+### 十二、browser 工具全丢（`P2`，`--skip=browser-pane` 可跳）
+
+- 官方 2.2.2 的 `/out/main/pane-CwHDCUMq.js` **本身语法错误**：同一 ESM 顶层 `const n=e.createRequire(import.meta.url);`（offset 76，死变量）与 `var n=ct(…)`（offset 1849，真正在用的）撞名 → `Identifier 'n' has already been declared`，与 GitHub #60369 一字不差。该文件 MD5 与官方备份相同，**不是本地补丁造成**。
+- 因果链：pane 动态 `import()` 必然 reject → 报 `browser.pane.unavailable` → 45 个 `browser.*` 工具（定义就在 pane.js 里）从未注册 → UI 无 Browser 入口、agent 无 browser 工具。日志里看不到这条错，因为动态 import 失败被 Electron 吞了。
+- 修法：只删那 41 个字符（`84183 → 84142`），锚点 `const n=e.createRequire(import.meta.url);` + 校验 `var n=ct(` 存在。
+- 验证：catalog 出现 `browser (45 tools)`、`tabs.open`/`snapshot`/`tabs.focus` 均可用。`browser.screenshot` 需要窗口可见（最小化/后台时必失败，是 Chromium 限制，不是补丁问题）。
+
+### 十三、功能开关搬进「设置 → 桌面端补丁」（`settings-page`）
+
+- 顶部那排小开关改成**默认关闭**（`oc-feat:bar` 缺省即关），所有开关统一收到设置的独立页里；想要快捷条可以在这页最下面再打开。
+- 实现是纯 DOM 注入，不碰上游组件树：往 `.settings-sidebar` 末尾插一个 `button[role=tab][data-oc-settings-tab]`（文字「桌面端补丁」），面板自己建成 `div[data-oc-settings-panel]` 挂到 `.settings` 下，点我们的 tab 时给 `.settings-content` 加 `data-oc-hide-native` 把原生内容藏掉，点任意原生 tab 就收起。
+- 10 行开关复用 `__ocFeatOn$`/`__ocFeatSet$`，键：`home-delete` `time` `reveal` `workfold` `reason-dbl` `pane-fold` `session-pin` `click-fix` `width` `bar`；每行一句人话说明，底部「重载界面」按钮。
+- 按用途分成 4 组、可折叠：`home` 首页与会话（会话删除按钮、会话置顶）、`read` 阅读与消息（时间与用量、工作中展开、双击折叠思考、正文宽度）、`fix` 点击与文件（点击丢失兜底、文件定位）、`ui` 界面（空页自动折叠、顶部快捷条）。组标题是 `<button class="grp-hd">`（`▶` 旋转 90° 当展开态），折叠态记在 `localStorage['oc-set-fold:<group>']`（`'1'`=收起、`'0'`=展开），**缺省全部收起**（没记录就当收起，老板要求打开先看到四个标题）。
+- 点开我们的页面时给 `.settings-sidebar` 加 `data-oc-ours="1"`，CSS 把 `[data-slot="tabs-v2-trigger-wrapper"]` 的背景压成透明 —— 原生 tab 的选中底纹画在 wrapper 上（`rgb(58,58,58)`），光清 `aria-selected` 不够。
+- 入口：首页（左侧栏「主页」）→ 正文区左下角「设置」（实测中心 `442,655`）。
+- 已验证：设置页 tabs 13 → 14，我们的面板 `[619,45,720,886]`、10 行开关、点开关 localStorage 与 `aria-checked` 同步、顶部条消失。
+
+### 十四、执行/Shell 卡默认折叠 + 汇总组「点开就是全折的」（`inject/reason-fold.js`，跟着 D1，`T_REASONFOLD_JS`）
+
+老板最终确认的需求（m02305 选 C + m02443 追加）：
+
+- **A**：「执行 / Shell」这类工具卡默认收起来，点开才看参数和 Output；**思考块本身不动**（上游默认就是折的）。
+- **B**：「使用了 N 个…」汇总组手动展开后要**保持展开**（上游约 4–6 秒会自己折回）；而且**点开后组里的子项必须是折叠的**，不许连带全展开。
+
+实现要点：
+
+- 单选器：`button[data-slot="collapsible-trigger"]`；标题 `[data-slot="basic-tool-tool-title"]`；汇总组 trigger 里是 `[data-component="context-tool-group-trigger"]`。
+- **子项的标记是 `data-slot="context-tool-group-item"`，不是 `data-component`**（`querySelectorAll('[data-component=context-tool-group-item]')` 永远是 0）。
+- `foldItems(grp)`：组展开时把组内所有 `aria-expanded="true"` 的子 trigger（跳过组自己那个）逐个 `.click()` 收起来。
+- 三张表：`KEEP`（老板手动展开过，别再折）、`SHUT`（老板手动折过，别再开）、`LAST`（600ms 去重，click-fix 会补发一次）。
+- 归因用 **pointerdown 那一刻**的 `aria-expanded` 判定方向，不要延时读状态（延时窗口里自己的 fold 会先动手，永远读错）。
+- `triggerAt()` 兜底：点在组标题空白处时 `ev.target` 不在 button 内（实测 `closest` 为空），要依次用「最近的 collapsed-tool-group → 它的第一个 trigger」和 `elementsFromPoint` 元素栈找回来。
+- **key 必须给组和子项分命名空间**（`g|` / `p|`）。实测组的 fallback key 和组内第一个子项撞成同一个 `rid#0`，于是「点组」的 KEEP 把第一个子项也豁免了 —— 症状正是「点开后第一个『思考』永远折不上，其它 70 个都折了」。
+- 调度：MutationObserver(120ms 节流) + `setInterval(fold, 300)`。300ms 是因为上游折回后要尽快顶开，慢了能看见闪一下。
+- 实测（pid 20776 / 9222 / 71 个 trigger）：展开后 6 秒内只有组标题 open；点收起后 6 秒保持收起。
 
 ## 坑（务必记住）
 
@@ -294,6 +357,9 @@ LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar
 - **2.2.2：界面模式（Top tabs / Side tabs / Inbox）不存在任何本地存储里，只能按 DOM 判**（2026-10-30 实测）：`%APPDATA%\ai.opencode.desktop\opencode.settings` 只有 `tauriMigrated`/`pinchZoomEnabled`/`oldLayoutEligible`/`windowIds`/`firstLaunchOnboardingComplete`/`defaultServerUrl`/`backgroundColor`；localStorage 里没有 interfaceMode 之类的键、`IndexedDB` 目录是空的、`/config` 返回 404。功能开关条因此按 DOM 判：**Top tabs → `[data-slot=titlebar-v2] [data-slot=tab-link]` 有 N 个（实测 9）、`[data-slot=vertical-tabs-sidebar]` 为 null；Side tabs → 标题栏内 0 个、sidebar 存在**（层级是 `titlebar-v2 > titlebar-tabs > titlebar-tab-item > tab-link`）。切换后 1.5 秒内 `applyLayout()` 自动换位，实测 Top tabs 开关条 **106×110 @ (8,415)** 竖排在左侧垂直居中（`data-oc-feat-vert`，5 项时），Side tabs 横排在标题栏中间（5 项 487×44 @ (365,0)，6 项 585×44 @ (316,0)）。Top tabs 下左侧没有会话列表（消息区居中留白 ~180px），竖排不会压正文；设置页左侧导航从 x≈180 起，也不重叠。
 - **2.2.2：双击思考块折叠是「整块」生效（标题行 + 正文），正文双击不再选词**（2026-10-30 实现，老板先要标题行、看完改成整块）：真实双击 = `click` + `click` + `dblclick`，官方那两次 click 在 `aria-expanded` 上互相抵消（实测序列 `false → true → false`），所以在 `dblclick`（capture）里补一次 `trigger.click()` 就净切换一次，不需要判断前后状态。正文上双击时官方 click 为 0 次，补一次同样等于切换一次 —— 两种情况共用一套逻辑。实测：正文双击 `true → false`、标题行双击 `false → true`。思考块默认裹在「使用了 N 个工具」折叠组里，`[data-component=reasoning-part]` 一开始是 0；`[data-slot=context-tool-group-trigger]` 在 2.2.2 已经不存在，点开用 `[data-component=collapsed-tool-group] button`（`.click()` 有效，实测 0 → 40 个 part）。
 - **2.2.2：设置页能用 CDP 打开并切布局（验证主题判定时很省事）**：向页面发 `Ctrl+,`（`Input.dispatchKeyEvent` 依次 `rawKeyDown` + `char` + `keyUp`，`modifiers:2`、`key:','`、`code:'Comma'`、`windowsVirtualKeyCode:188`、`nativeVirtualKeyCode:188`）就能打开设置；它不改 URL、没有 `role=dialog`，只能靠 `[data-slot=settings-row-title]` 出现来判定。「偏好设置」页顶部就是三张布局卡片（Top tabs / Side tabs / Inbox），用 `textContent.trim()==='Side tabs'` 找到文本节点、取中心坐标后发真实鼠标三连（`mouseMoved`/`mousePressed`/`mouseReleased`）点一下即可切换，`Escape` 退回应用。**别去改 `opencode.settings` 文件**，那里没有这个键（改了也没用）。
+- **2.2.2：`Ctrl+,` 打不开设置页，真正的入口是首页正文区底部那两个按钮（2026-10-30 实测）**：首页（点左侧栏「主页」后）正文区左下角有 `设置` 和 `帮助` 两个 268×28 的按钮（实测 `设置@308,641`，中心 `(442,655)`），点它设置页才以覆盖层铺在主区域；顶部「OpenCode 菜单 → 文件 → 设置」那条路在本机点不开（子菜单 SubTrigger 一直 `data-closed`）。设置页 DOM：`DIV.settings-screen > DIV.settings[data-component=tabs-v2][data-variant=settings] > (.settings-mobile-nav + ASIDE.settings-sidebar + DIV.settings-content)`，导航项是 `button[role=tab][data-slot=tabs-v2-trigger][data-value=<key>]`，内容区只渲染当前选中的 `DIV[role=tabpanel].settings-panel`。`document.title` 不变，`location.href` 一直是 `oc://renderer/index.html`（内存路由），**别 `history.pushState` 到 `/settings`**——既不生效，之后一 reload 还会渲染成 `Not found`（只能 `location.href='oc://renderer/index.html'` 救回来）。
+- **往设置页塞自定义面板：`.settings` 没有 `position:relative`，`position:absolute;left:260px` 的包含块是外层，会把左侧导航整块盖住（2026-10-30 实测）**：实测 `.settings=[291,45,1048,886]`、`.settings-sidebar=[291,45,328,886]`、`.settings-content=[619,45,720,886]`，而 panel 落在 `[276,44,1078,895]`。修法是运行期给 `.settings` 补 `style.position='relative'`，再按 `.settings-sidebar` 的实宽写 `panel.style.left`（不要写死 260）。
+- **`TypeError: Jt is not a function` 会把整个渲染器打成「出了点问题」，根因是 D8 注入里写成了 `Jt(`（2026-10-30 踩了）**：同一个 children 数组里原生删除项用的是 `Zt(()=>e.language.t(\`common.delete\`))`，注入的多选删除也必须是 `Zt(()=>"多选删除")`。写成 `Jt` 时编译能过、静态自检也能过（只查 `__ocMultiEnter$` 在不在），但首页一渲染就抛，页面上只剩错误页。抽出来的 chunk 里对着报错 `行:列` 定位最快（`main-new.js:2905:3506` 正好落在 `Jt(()=>"多选删除")` 上）。
 
 ## 升级后锚点找不到怎么办
 

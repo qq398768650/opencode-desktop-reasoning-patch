@@ -31,7 +31,7 @@ const OUT = (() => { const i = process.argv.indexOf('--out'); return i >= 0 ? pr
 const DEBUG_PORT = pickPort();
 
 // --skip=key1,key2：跳过官方已经实现/不再需要的功能。每个 key 对应一组注入模块 + 锚点规则。
-const FEATURE_KEYS = ['home-delete', 'time-stats', 'file-reveal', 'work-fold', 'reason-dbl', 'feature-panel'];
+const FEATURE_KEYS = ['home-delete', 'time-stats', 'file-reveal', 'work-fold', 'reason-dbl', 'reason-fold', 'feature-panel', 'settings-page', 'pane-fold', 'session-pin', 'click-fix', 'browser-pane'];
 const SKIP = new Set();
 for (const a of process.argv) {
   if (!a.startsWith('--skip=')) continue;
@@ -222,6 +222,21 @@ const T_WORK_JS = fs.readFileSync(path.join(HERE, 'inject', 'work-fold.js'), 'ut
 // 第六组：双击思考块标题行 = 折叠/展开一次（官方双击会被两次 click 抵消，这里补一次）
 const T_REASON_JS = fs.readFileSync(path.join(HERE, 'inject', 'reason-dbl.js'), 'utf8').trim();
 
+// 第七组：最后一个文件标签页关掉后自动收起右侧审查栏（源码在 inject/pane-fold.js）
+const T_PANEFOLD_JS = fs.readFileSync(path.join(HERE, 'inject', 'pane-fold.js'), 'utf8').trim();
+
+// 第八组：首页会话列表右键「置顶」（源码在 inject/session-pin.js）
+const T_PIN_JS = fs.readFileSync(path.join(HERE, 'inject', 'session-pin.js'), 'utf8').trim();
+
+// 第九组：兜底修 2.2.2 的「点击丢失」（pointerdown 重建节点 → 不合成 click）源码在 inject/click-fix.js
+const T_CLICKFIX_JS = fs.readFileSync(path.join(HERE, 'inject', 'click-fix.js'), 'utf8').trim();
+
+// 第十二组：思考 / 执行组默认折叠（源码在 inject/reason-fold.js）
+const T_REASONFOLD_JS = fs.readFileSync(path.join(HERE, 'inject', 'reason-fold.js'), 'utf8').trim();
+
+// 第十一组：把这些开关搬进「设置 → 桌面端补丁」独立页（源码在 inject/settings-page.js）
+const T_SETTINGS_JS = fs.readFileSync(path.join(HERE, 'inject', 'settings-page.js'), 'utf8').trim();
+
 // 第六组：顶部标题栏正中的功能开关条（滑块），逐项开关上面这几组补丁。
 // 必须最先注入：后面几个模块启动时会读 __ocFeatOn$() 判断自己要不要装。
 const T_FEAT_JS = fs.readFileSync(path.join(HERE, 'inject', 'feature-panel.js'), 'utf8').trim();
@@ -240,13 +255,22 @@ function buildD1Repl() {
   if (!skip('file-reveal')) avail.push('reveal');
   if (!skip('work-fold')) avail.push('workfold');
   if (!skip('reason-dbl')) avail.push('reason-dbl');
+  if (!skip('reason-fold')) avail.push('reason-fold');
+  if (!skip('pane-fold')) avail.push('pane-fold');
+  if (!skip('session-pin')) avail.push('session-pin');
+  if (!skip('click-fix')) avail.push('click-fix');
   avail.push('width');
   if (!skip('feature-panel')) stmts.push(T_FEAT_JS);
+  if (!skip('settings-page')) stmts.push(T_SETTINGS_JS);
   if (!skip('home-delete')) stmts.push(D_MULTI_JS);
   if (!skip('time-stats')) stmts.push(T_TIME_JS);
   if (!skip('file-reveal')) stmts.push(T_FILE_JS);
   if (!skip('work-fold')) stmts.push(T_WORK_JS);
   if (!skip('reason-dbl')) stmts.push(T_REASON_JS);
+  if (!skip('reason-fold')) stmts.push(T_REASONFOLD_JS);
+  if (!skip('pane-fold')) stmts.push(T_PANEFOLD_JS);
+  if (!skip('session-pin')) stmts.push(T_PIN_JS);
+  if (!skip('click-fix')) stmts.push(T_CLICKFIX_JS);
   return ',WKt=' + (skip('home-delete') ? '!1' : '!0') + ',GKt=500,KKt=250,qKt=200,JKt=[56,38,66,46,30,52]'
     + (skip('home-delete') ? '' : ',' + D_TRASH_ICON)
     + ';'
@@ -299,6 +323,20 @@ const MAIN_REVEAL_JS = ';import("electron").then(function(m){try{m.ipcMain.handl
 // 代表消息取行内 `msg_` 前缀 part 中 `time.completed` 最大的那条（行上的 data-message-id 是用户消息 id，
 // 只有 time.created，拿它会一直不显示）。折叠组展开后 text-part-meta 会重新出现，此时走旧路径、跳过回退。
 // 每条规则：[key, 说明, 锚点, 替换]。key 对应 --skip 的功能名。
+// 右键菜单里「删除…」这一项的原文：D8（多选删除）拿它当锚点。
+// 注意：2.2.2 里有两套会话菜单 ——
+//   a) 会话内标题旁的 Dropdown（U$.Item，有 重命名/导出/删除/…，props 里有 e.server/e.record.session）
+//   b) 首页会话列表的 ContextMenu（U$.Context.Content 里的 U$.Item，只有 归档/删除，props 里**没有** session）
+// 老板截图和日常用的是 b。b 的 props 只有 {archived,onArchive,onUnarchive,onDelete}，拿不到 session.id，
+// 所以置顶项靠 session-pin.js 里 contextmenu 捕获的「当前右键行的标题」来定位会话。
+const D8_MENU_ANCHOR = 'M(U$.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[Zt(()=>e.language.t(`common.delete`)),`…`]}})';
+const CTX_MENU_ANCHOR = 'M(U$.Item,{get onSelect(){return e.onArchive},get children(){return t.t(`common.archive`)}})';
+// 坑：这一项在 `get fallback(){return <单个表达式>}` 里，直接拼两段会被逗号运算符吃掉前一段，
+// 所以必须整段替换 fallback 并包成数组。
+const P1_CTX_ITEM = 'M(U$.Item,{get onSelect(){return globalThis.__ocPinToggle$&&globalThis.__ocPinToggle$()},get children(){return globalThis.__ocPinLabel$?globalThis.__ocPinLabel$():`置顶`}}),';
+const P1_CTX_FIND = 'get fallback(){return ' + CTX_MENU_ANCHOR + '}';
+const P1_CTX_REPL = 'get fallback(){return[' + P1_CTX_ITEM + CTX_MENU_ANCHOR + ']}';
+
 const D_RULES = [
   [null, 'D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 时间/用量/速度/会话统计 + 文件定位 + 工作中展开收起 + 功能开关条', ',WKt=!1,GKt=500,KKt=250,qKt=200,JKt=[56,38,66,46,30,52];', null],
   ['home-delete', 'D2 tooltip 文案 归档→删除', 'get value(){return e.language.t(`common.archive`)}', 'get value(){return globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`)?e.language.t(`common.archive`):e.language.t(`common.delete`)}'],
@@ -307,7 +345,8 @@ const D_RULES = [
   ['home-delete', 'D5 无障碍标签 归档→删除', 'get"aria-label"(){return e.language.t(`common.archive`)}', 'get"aria-label"(){return globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`)?e.language.t(`common.archive`):e.language.t(`common.delete`)}'],
   ['home-delete', 'D6 点击动作 归档→删除 + Shift 免确认', D_ANCHOR, '(function(){if(globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`))return e.onArchiveSession(e.record.session);var _p=globalThis.__ocSkipConfirm;globalThis.__ocSkipConfirm=!!t.shiftKey;try{e.onDeleteSession(e.server,e.record.session)}finally{globalThis.__ocSkipConfirm=_p}})()'],
   ['home-delete', 'D7 showDelete 支持跳过确认框（走内部删除函数 v）', 'showDelete:(e,t)=>r.show(()=>M(y,{server:e,session:t}))', 'showDelete:(e,t)=>globalThis.__ocSkipConfirm?v(e,t):r.show(()=>M(y,{server:e,session:t}))'],
-  ['home-delete', 'D8 会话右键菜单加「多选删除」入口', 'M(U$.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[Zt(()=>e.language.t(`common.delete`)),`…`]}})', 'M(U$.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[Zt(()=>e.language.t(`common.delete`)),`…`]}}),M(U$.Item,{onSelect:()=>globalThis.__ocMultiEnter$(e.server,e.record.session),get children(){return[Jt(()=>"多选删除"),`…`]}})'],
+  ['session-pin', 'P1 首页会话右键菜单加「置顶 / 取消置顶」', P1_CTX_FIND, P1_CTX_REPL],
+  ['home-delete', 'D8 会话右键菜单加「多选删除」入口', D8_MENU_ANCHOR, D8_MENU_ANCHOR + ',M(U$.Item,{onSelect:()=>globalThis.__ocMultiEnter$(e.server,e.record.session),get children(){return[Zt(()=>"多选删除"),`…`]}})'],
 ];
 
 function replaceOnce(content, find, repl, label) {
@@ -451,6 +490,13 @@ for (const [key, label, find, repl] of D_RULES) {
   need('feature-panel', txt.includes('__ocFeatOn$'), '补丁自检失败：功能开关的读取函数没注入');
   need('time-stats', txt.includes('__ocTimeBoot$'), '补丁自检失败：时间/用量模块没注入');
   need('file-reveal', txt.includes('__ocFileBoot$'), '补丁自检失败：文件定位模块没注入');
+  need('pane-fold', txt.includes('__ocPaneFoldBoot$'), '补丁自检失败：最后一个标签页关掉自动折叠模块没注入');
+  need('session-pin', txt.includes('__ocPinBoot$'), '补丁自检失败：会话置顶模块没注入');
+  need('session-pin', txt.includes('__ocPinToggle$'), '补丁自检失败：会话置顶的菜单回调没接上');
+  need('click-fix', txt.includes('__ocClickFixBoot$'), '补丁自检失败：点击兜底模块没注入');
+  need('settings-page', txt.includes('__ocSettingsPageBoot$'), '补丁自检失败：设置页开关没注入');
+  need('settings-page', txt.includes('data-oc-settings-tab'), '补丁自检失败：设置页导航项没注入');
+  need('reason-fold', txt.includes('__ocReasonFoldBoot$'), '补丁自检失败：思考默认折叠模块没注入');
 }
 jobs.push({ path: delPath, content: del, label: '首页删除按钮' });
 
@@ -481,6 +527,37 @@ if (!skip('file-reveal')) {
   jobs.push({ path: MAIN_PATH, content: mainBuf, label: '主进程文件定位' });
 } else {
   console.log('  F2 主进程 oc:reveal-path: 跳过（--skip=file-reveal）');
+}
+
+// ---- 补丁 5：修 2.2.2 官方 pane chunk 的重复顶层声明（browser 工具全部不注册的根因） ----
+// /out/main/pane-*.js 顶层同时有 `const n=e.createRequire(import.meta.url);`（死变量，之后从未被引用）
+// 和 `var n=ct(typeof t===...)`（真正在用的那个）→ 同一个 ESM 里 const n 与 var n 撞名，
+// `node --check` 报 SyntaxError: Identifier 'n' has already been declared。
+// main 进程懒加载 pane 时 import() 必然 reject → 报 browser.pane.unavailable → 45 个 browser.* 工具
+// 从未注册（UI 没有 Browser 入口，agent 也调不到）。官方 2.2.2 产物本身就是这样，
+// 与本仓库的 UI 补丁无关（该文件 MD5 与 resources\app.asar.bak-<版本> 内同名文件完全一致）。
+if (!skip('browser-pane')) {
+  let panePath = null;
+  walkFiles(srcParsed.header, (np) => { if (/^\/out\/main\/pane-[^/]+\.js$/.test(np)) panePath = np; });
+  if (!panePath) {
+    console.log('  P2 browser pane 修复: 没找到 /out/main/pane-*.js，跳过');
+  } else {
+    const paneTxt = readEntry(srcParsed, panePath).toString('utf8');
+    const DEAD_DECL = 'const n=e.createRequire(import.meta.url);';
+    const LIVE_DECL = 'var n=ct(';
+    if (!paneTxt.includes(DEAD_DECL)) {
+      console.log('  P2 browser pane 修复: 死声明不在（上游可能已修），跳过');
+    } else if (!paneTxt.includes(LIVE_DECL)) {
+      console.log('  P2 browser pane 修复: 锚点结构和预期不符（没有 var n=ct( ），跳过（需人工看 bundle）');
+    } else {
+      const fixed = paneTxt.split(DEAD_DECL).join('');
+      if (fixed.includes(DEAD_DECL)) throw new Error('P2 browser pane 修复: 替换后仍有死声明残留');
+      jobs.push({ path: panePath, content: Buffer.from(fixed, 'utf8'), label: 'browser pane 重复声明修复' });
+      console.log('  P2 browser pane 修复: OK ' + panePath + ' (' + paneTxt.length + ' → ' + fixed.length + ' 字节)');
+    }
+  }
+} else {
+  console.log('  P2 browser pane 修复: 跳过（--skip=browser-pane）');
 }
 
 // ---- 重建 asar ----

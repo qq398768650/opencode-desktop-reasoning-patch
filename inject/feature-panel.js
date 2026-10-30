@@ -25,7 +25,12 @@
 
     // 各模块用的读开关函数：没有这一层的话，模块自己 try/catch 会把代码写得很脏
     globalThis.__ocFeatOn$ = function (key) {
-      try { return localStorage.getItem(PREFIX + key) !== '0'; } catch (e) { return true; }
+      try {
+        var v = localStorage.getItem(PREFIX + key);
+        // 顶部快捷条默认关：开关已经搬进「设置 → 桌面端补丁」了
+        if (key === 'bar') return v === '1';
+        return v !== '0';
+      } catch (e) { return key !== 'bar'; }
     };
     globalThis.__ocFeatSet$ = function (key, on) {
       try { localStorage.setItem(PREFIX + key, on ? '1' : '0'); } catch (e) {}
@@ -37,7 +42,12 @@
       ['reveal', '文件定位'],
       ['workfold', '工作中展开'],
       ['reason-dbl', '双击思考'],
-      ['width', '正文宽度']
+      ['reason-fold', '思考默认折叠'],
+      ['pane-fold', '空页折叠'],
+      ['session-pin', '会话置顶'],
+      ['click-fix', '点击修复'],
+      ['width', '正文宽度'],
+      ['bar', '顶部快捷条']
     ];
     // --skip 掉的功能不注入代码，开关留在条上就是个按了没反应的死按钮
     if (globalThis.__ocFeatAvail$ && globalThis.__ocFeatAvail$.length) {
@@ -104,6 +114,12 @@
 
     function build() {
       css();
+      // 开关都搬进设置页了：默认不画这条，只在设置里把「顶部快捷条」打开时才出现
+      if (!globalThis.__ocFeatOn$('bar')) {
+        var gone = document.querySelector('[data-oc-feat-bar]');
+        if (gone) gone.remove();
+        return null;
+      }
       var header = document.querySelector('[data-slot="titlebar-v2"]');
       if (!header) return null;
       var old = document.querySelector('[data-oc-feat-bar]');
@@ -114,6 +130,7 @@
       bar.setAttribute('data-oc-feat-bar', '');
       for (var i = 0; i < ITEMS.length; i++) {
         var key = ITEMS[i][0], label = ITEMS[i][1];
+        if (key === 'bar') continue; // 快捷条不给自己画按钮
         var b = document.createElement('button');
         b.type = 'button';
         b.setAttribute('data-oc-feat', key);
