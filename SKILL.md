@@ -281,24 +281,34 @@ LOCALAPPDATA=/tmp/fakelocal node apply-patch.mjs --out /tmp/patched.asar
 - 入口：首页（左侧栏「主页」）→ 正文区左下角「设置」（实测中心 `442,655`）。
 - 已验证：设置页 tabs 13 → 14，我们的面板 `[619,45,720,886]`、10 行开关、点开关 localStorage 与 `aria-checked` 同步、顶部条消失。
 
-### 十四、执行/Shell 卡默认折叠 + 汇总组「点开就是全折的」（`inject/reason-fold.js`，跟着 D1，`T_REASONFOLD_JS`）
+### 十四、执行/Shell 卡默认折叠（`inject/reason-fold.js`，跟着 D1，`T_REASONFOLD_JS`）
 
-老板最终确认的需求（m02305 选 C + m02443 追加）：
+需求演变：m02305 选 C（A+B）→ m02615「【使用了47个写入、Shell、编辑、compress和读取】 这个的折叠逻辑还原」→ **B 整段撤销，汇总组完全交给上游**。
 
-- **A**：「执行 / Shell」这类工具卡默认收起来，点开才看参数和 Output；**思考块本身不动**（上游默认就是折的）。
-- **B**：「使用了 N 个…」汇总组手动展开后要**保持展开**（上游约 4–6 秒会自己折回）；而且**点开后组里的子项必须是折叠的**，不许连带全展开。
+- **A（保留）**：「执行 / Shell」这类工具卡默认收起来，点开才看参数和 Output；**思考块本身不动**（上游默认就是折的）。
+- **B（已删除，2026-10-30）**：曾经用 `KEEP`/`SHUT`/`foldItems` 强行让汇总组「点开后保持展开、并把组内子项全折起来」。实测症状是点收起又被顶开、组里子项一律折着，老板要求还原。现在代码里**没有任何对汇总组的 click**。
 
-实现要点：
+实现要点（v5）：
 
 - 单选器：`button[data-slot="collapsible-trigger"]`；标题 `[data-slot="basic-tool-tool-title"]`；汇总组 trigger 里是 `[data-component="context-tool-group-trigger"]`。
-- **子项的标记是 `data-slot="context-tool-group-item"`，不是 `data-component`**（`querySelectorAll('[data-component=context-tool-group-item]')` 永远是 0）。
-- `foldItems(grp)`：组展开时把组内所有 `aria-expanded="true"` 的子 trigger（跳过组自己那个）逐个 `.click()` 收起来。
-- 三张表：`KEEP`（老板手动展开过，别再折）、`SHUT`（老板手动折过，别再开）、`LAST`（600ms 去重，click-fix 会补发一次）。
-- 归因用 **pointerdown 那一刻**的 `aria-expanded` 判定方向，不要延时读状态（延时窗口里自己的 fold 会先动手，永远读错）。
-- `triggerAt()` 兜底：点在组标题空白处时 `ev.target` 不在 button 内（实测 `closest` 为空），要依次用「最近的 collapsed-tool-group → 它的第一个 trigger」和 `elementsFromPoint` 元素栈找回来。
-- **key 必须给组和子项分命名空间**（`g|` / `p|`）。实测组的 fallback key 和组内第一个子项撞成同一个 `rid#0`，于是「点组」的 KEEP 把第一个子项也豁免了 —— 症状正是「点开后第一个『思考』永远折不上，其它 70 个都折了」。
-- 调度：MutationObserver(120ms 节流) + `setInterval(fold, 300)`。300ms 是因为上游折回后要尽快顶开，慢了能看见闪一下。
-- 实测（pid 20776 / 9222 / 71 个 trigger）：展开后 6 秒内只有组标题 open；点收起后 6 秒保持收起。
+- **汇总组一律跳过**：`fold()` 第一道 `if (b.querySelector(GROUP_TRIG)) continue;`，`pointerdown` 里也先 `return`。即使那条 `data-component` 在新版本里改了名，汇总组标题是「使用了 N 个 …」，`isExecCard()` 也不匹配，天然不会被折。
+- `isExecCard(label)`：`执行` / `Shell`（运行中标题显示「执行」，跑完变「Shell」，两个都要收）。
+- `KEEP`：老板自己点开过的执行卡记下来，不再折回；`LAST`：600ms 去重（click-fix 会补发一次 click）。
+- 归因用 **pointerdown 那一刻**的 `aria-expanded` 判定方向，不要延时读状态（延时窗口里自己的 fold 会先动手）。
+- 调度：MutationObserver(120ms 节流) + `setInterval(fold, 300)`。
+- 验证：`globalThis.__ocRF$` 快照里 `k`/`l` 都应为 0（没有残留干预）；会话空闲时点汇总组收起，5.5 秒后仍是收起；组内 Shell 卡 `aria-expanded="false"`。
+
+### 十五、审查栏每次展开都多一个 New tab（`inject/pane-tabs.js`，跟着 D1，`T_PANETABS_JS`）
+
+现象：右上角「切换审查」每展开一次，标签栏里就多一个 `New tab`；里面已经有空白 tab 也照加，反复开合会堆出一排。
+
+- 归属：**上游行为**，不是我们的补丁。把 `oc-feat:pane-fold` 设成 `'0'` 并 reload 后仍然每次 +1（实测 3 轮展开：1 → 2 → 3 个 New tab）。
+- 上游只判断「有没有可用的内容 tab」，不判断「是不是已经有一个空白 tab」，所以展开时无条件补一个。
+- 修法：不碰创建逻辑，只做事后去重 —— 找出 `#review-panel [role=tablist]` 下所有文字为 `New tab` 的标签格，保留当前 `aria-selected="true"` 的那个（没有就保留第一个），其余点它的 `[aria-label="关闭标签页"]`。内容 tab 一律不动。
+- 记账方式：`[role=tablist]` 的子元素是 `DIV.group`（里面同时有 `[role=tab]` 和关闭按钮），最后一个子元素是 sticky 的「添加标签页」，没有 `role=tab`，遍历时要跳过。
+- 调度：MutationObserver + `setInterval(600)`，200ms 节流防止自己关标签引起的递归。
+- 开关 `pane-tabs`，标记 `__ocPaneTabsBoot$` / `<html data-oc-pane-tabs="1">`。
+- 实测（pid 30712 / 9223）：连续 3 轮展开/收起，tab 数稳定为 1。
 
 ## 坑（务必记住）
 

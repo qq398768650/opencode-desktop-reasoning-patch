@@ -31,7 +31,7 @@ const OUT = (() => { const i = process.argv.indexOf('--out'); return i >= 0 ? pr
 const DEBUG_PORT = pickPort();
 
 // --skip=key1,key2：跳过官方已经实现/不再需要的功能。每个 key 对应一组注入模块 + 锚点规则。
-const FEATURE_KEYS = ['home-delete', 'time-stats', 'file-reveal', 'work-fold', 'reason-dbl', 'reason-fold', 'feature-panel', 'settings-page', 'pane-fold', 'session-pin', 'click-fix', 'browser-pane'];
+const FEATURE_KEYS = ['home-delete', 'time-stats', 'file-reveal', 'work-fold', 'reason-dbl', 'reason-fold', 'feature-panel', 'settings-page', 'pane-fold', 'pane-tabs', 'session-pin', 'click-fix', 'browser-pane'];
 const SKIP = new Set();
 for (const a of process.argv) {
   if (!a.startsWith('--skip=')) continue;
@@ -225,6 +225,9 @@ const T_REASON_JS = fs.readFileSync(path.join(HERE, 'inject', 'reason-dbl.js'), 
 // 第七组：最后一个文件标签页关掉后自动收起右侧审查栏（源码在 inject/pane-fold.js）
 const T_PANEFOLD_JS = fs.readFileSync(path.join(HERE, 'inject', 'pane-fold.js'), 'utf8').trim();
 
+// 第十三组：审查栏每次展开都会多一个 New tab，事后把多余的空白标签收掉（源码在 inject/pane-tabs.js）
+const T_PANETABS_JS = fs.readFileSync(path.join(HERE, 'inject', 'pane-tabs.js'), 'utf8').trim();
+
 // 第八组：首页会话列表右键「置顶」（源码在 inject/session-pin.js）
 const T_PIN_JS = fs.readFileSync(path.join(HERE, 'inject', 'session-pin.js'), 'utf8').trim();
 
@@ -257,6 +260,7 @@ function buildD1Repl() {
   if (!skip('reason-dbl')) avail.push('reason-dbl');
   if (!skip('reason-fold')) avail.push('reason-fold');
   if (!skip('pane-fold')) avail.push('pane-fold');
+  if (!skip('pane-tabs')) avail.push('pane-tabs');
   if (!skip('session-pin')) avail.push('session-pin');
   if (!skip('click-fix')) avail.push('click-fix');
   avail.push('width');
@@ -269,6 +273,7 @@ function buildD1Repl() {
   if (!skip('reason-dbl')) stmts.push(T_REASON_JS);
   if (!skip('reason-fold')) stmts.push(T_REASONFOLD_JS);
   if (!skip('pane-fold')) stmts.push(T_PANEFOLD_JS);
+  if (!skip('pane-tabs')) stmts.push(T_PANETABS_JS);
   if (!skip('session-pin')) stmts.push(T_PIN_JS);
   if (!skip('click-fix')) stmts.push(T_CLICKFIX_JS);
   return ',WKt=' + (skip('home-delete') ? '!1' : '!0') + ',GKt=500,KKt=250,qKt=200,JKt=[56,38,66,46,30,52]'
@@ -491,6 +496,7 @@ for (const [key, label, find, repl] of D_RULES) {
   need('time-stats', txt.includes('__ocTimeBoot$'), '补丁自检失败：时间/用量模块没注入');
   need('file-reveal', txt.includes('__ocFileBoot$'), '补丁自检失败：文件定位模块没注入');
   need('pane-fold', txt.includes('__ocPaneFoldBoot$'), '补丁自检失败：最后一个标签页关掉自动折叠模块没注入');
+  need('pane-tabs', txt.includes('__ocPaneTabsBoot$'), '补丁自检失败：审查栏空白标签去重模块没注入');
   need('session-pin', txt.includes('__ocPinBoot$'), '补丁自检失败：会话置顶模块没注入');
   need('session-pin', txt.includes('__ocPinToggle$'), '补丁自检失败：会话置顶的菜单回调没接上');
   need('click-fix', txt.includes('__ocClickFixBoot$'), '补丁自检失败：点击兜底模块没注入');
