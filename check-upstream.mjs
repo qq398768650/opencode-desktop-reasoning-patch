@@ -58,7 +58,7 @@ export const FEATURES = [
     name: '「工作中」行展开 / 收起',
     patterns: [
       /activity pill/i,
-      /working shelf/i,
+      /(working|activity)[^.\n]{0,24}(shelf|pill)/i,
       /expand[^.\n]{0,24}working/i,
       /collapse[^.\n]{0,24}(working|activity)/i,
     ],
