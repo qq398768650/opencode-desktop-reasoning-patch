@@ -128,6 +128,7 @@ git clone https://github.com/qq398768650/opencode-desktop-reasoning-patch.git
 cd opencode-desktop-reasoning-patch
 
 # 1. 先看会改什么（dry-run，不动文件、不动进程）
+#    顺带自动查官方更新日志：官方已经做了的功能会列出来并问你要不要跳过
 node apply-patch.mjs
 
 # 2. 真正写入（自动：关桌面端 → 备份官方版 → 写补丁 → 再开回来）
@@ -158,6 +159,31 @@ node apply-patch.mjs --restore
 node apply-patch.mjs --out patched.asar
 ```
 
+### 打补丁前先查官方更新日志
+
+`apply-patch.mjs` 每次运行都会先读官方 release notes（范围是「安装目录里最旧的 `app.asar.bak-<版本>` → 当前版本」，所以跨几个版本升级也不会漏），拿每个功能的关键词去匹配，命中就提示：
+
+```
+  检查范围: 2.2.0 → 2.2.3（上次打过补丁的版本起）
+  官方 v2.2.0 → 2.2.3 日志：1 项疑似官方已实现
+  ⚠️ work-fold  「工作中」行展开 / 收起
+     · - **Inspect Background Shells**: Click a running shell in the Desktop activity pill…
+     → 确认官方是否已覆盖；是就重跑：node apply-patch.mjs --skip=work-fold --write
+```
+
+交互终端里会逐条问「跳过这个补丁？(y/N)」，答 y 就当场按 `--skip` 处理（注入的代码里也真的不塞这个模块了）。非交互环境只打印提示。
+
+想手动看/做 CI 判断：
+
+```bash
+node check-upstream.mjs                    # 只查当前版本
+node check-upstream.mjs --since 2.2.0      # 查 2.2.0 之后所有版本
+node check-upstream.mjs --strict           # 有命中就退出码 1
+node check-upstream.mjs --version 2.2.2 --json
+```
+
+可用功能名（`--skip` 用）：`home-delete` / `time-stats` / `file-reveal` / `work-fold` / `feature-panel`。跳过某项后，顶部开关条也不再显示那个开关，不会留下按了没反应的死按钮。完全不想查日志就加 `--no-check`。
+
 `--write` 会自动完成关/开桌面端，**不会断会话**——agent 跑在后端进程 `opencode-cli.exe serve --service` 里，和桌面窗口是两个进程。
 
 只想单独重启桌面端：`node restart.mjs`。
@@ -168,7 +194,8 @@ node apply-patch.mjs --out patched.asar
 
 | 文件 | 作用 |
 |---|---|
-| `apply-patch.mjs` | 主脚本：找安装目录 → 定位删除按钮 chunk（+ preload、主进程）→ 打三组补丁 → 重建 asar（含 dry-run / `--out` / `--write`） |
+| `apply-patch.mjs` | 主脚本：找安装目录 → 查官方日志（冲突提示）→ 定位 chunk（+ preload、主进程）→ 打补丁 → 重建 asar（含 dry-run / `--out` / `--write` / `--skip` / `--restore`） |
+| `check-upstream.mjs` | 查官方 release notes，匹配出「官方可能已经实现」的补丁功能；`apply-patch.mjs` 自动调用 |
 | `inject/file-reveal.js` | 文件定位补丁的 renderer 注入源码（`apply-patch.mjs` 读进来内联，不单独部署） |
 | `inject/work-fold.js` | 「工作中」行展开/收起按钮的 renderer 注入源码（`apply-patch.mjs` 读进来内联，不单独部署） |
 | `inject/feature-panel.js` | 顶部功能开关条的 renderer 注入源码（最先注入，见「功能开关条」一节） |

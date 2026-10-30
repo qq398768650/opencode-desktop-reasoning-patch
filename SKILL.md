@@ -61,6 +61,23 @@ node apply-patch.mjs --out patched.asar
 
 一条 `--write` 就够（关/开桌面端都自动做了，不会断会话：agent 跑在后端 `opencode-cli.exe serve --service` 里）。它还会顺手把 `commands/reasoning-patch.md` 装到 `~/.config/opencode/commands/`，让 `/reasoning-patch` 可用（内容没变时只打印「已是最新」）。`restart.mjs` 只在想单独重启时用。
 
+**第 0.5 步：查官方日志，确认没有功能被官方做掉了（必做）**
+
+`apply-patch.mjs` 每次运行都会自动调 `check-upstream.mjs`：读官方 release notes，范围是「安装目录里最旧的 `app.asar.bak-<版本>` → 当前版本」（跨版本升级也覆盖），拿每个功能的关键词去匹配。命中时打印原文，交互终端里逐条问「跳过这个补丁？(y/N)」，答 y 就把该功能当成 `--skip` 处理——注入的代码里真的不塞这个模块，顶部开关条也不再列它（不会留下按了没反应的死开关）。
+
+也可以单独跑：
+
+```bash
+node check-upstream.mjs                 # 只查当前版本
+node check-upstream.mjs --since 2.2.0   # 查 2.2.0 之后所有版本
+node check-upstream.mjs --strict        # 有命中就退出码 1
+```
+
+`--skip` 的功能名：`home-delete` / `time-stats` / `file-reveal` / `work-fold` / `feature-panel`。例：`node apply-patch.mjs --skip=work-fold --write`。不想查日志加 `--no-check`。
+
+注意它只做提示、不做判断：命中关键词 ≠ 官方做了同一件事（官方说 activity pill 能展开 shell 输出，不等于我们的「工作中」行折叠该删），报告会给原文，由人拍板。
+
+
 调试口不用管：`apply-patch.mjs` / `restart.mjs` 会调 `debug-port.mjs` 自动挑一个没被 Windows 保留、也没被占用的端口（`--port` 或环境变量 `OC_DEBUG_PORT` 可指定）；`verify.mjs` 不传 `--port` 时自己扫 9222–9400，连上后会打印 `调试口: <port>`。
 
 `verify.mjs` 需要页面上有一个会话、且工具组已经展开（2.2.0+ 思考块在折叠组里）。它检查两件事：思考块恒展开（高度 > 48px，不再有 28px 折叠态）+ 右下角 `[data-oc-fold-all]` 按钮存在且 `position:fixed`。报「没找到思考块」就先点开一个工具组再跑。

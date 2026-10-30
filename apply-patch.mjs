@@ -11,6 +11,9 @@
 //   node apply-patch.mjs --write    # 真正写入 app.asar（写前请先完全退出桌面端）
 //   node apply-patch.mjs --out x.asar  # 只把打好的 asar 写到 x.asar（不动安装目录、不关进程）
 //   node apply-patch.mjs --restore  # 用官方备份 app.asar.bak-<版本> 还原 app.asar（撤销补丁）
+//   node apply-patch.mjs --skip=home-delete,work-fold  # 跳过指定功能（官方已实现时用）
+//       可跳过的 key: home-delete / time-stats / file-reveal / work-fold / feature-panel
+//   node apply-patch.mjs --no-upstream  # 不查官方更新日志（离线 / 不想等网络时）
 // 备份约定：<install>/resources/app.asar.bak-<官方版本号> 保存官方原版（本脚本会按需自动创建）
 import fs from 'node:fs';
 import os from 'node:os';
@@ -19,12 +22,25 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { execSync, spawn } from 'node:child_process';
 import { pickPort } from './debug-port.mjs';
+import { checkUpstream, formatReport } from './check-upstream.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 
 const WRITE = process.argv.includes('--write');
 const OUT = (() => { const i = process.argv.indexOf('--out'); return i >= 0 ? process.argv[i + 1] : null; })();
 const DEBUG_PORT = pickPort();
+
+// --skip=key1,key2：跳过官方已经实现/不再需要的功能。每个 key 对应一组注入模块 + 锚点规则。
+const FEATURE_KEYS = ['home-delete', 'time-stats', 'file-reveal', 'work-fold', 'feature-panel'];
+const SKIP = new Set();
+for (const a of process.argv) {
+  if (!a.startsWith('--skip=')) continue;
+  for (const k of a.slice('--skip='.length).split(',').map((s) => s.trim()).filter(Boolean)) SKIP.add(k);
+}
+for (const k of SKIP) {
+  if (!FEATURE_KEYS.includes(k)) throw new Error(`未知的 --skip 项「${k}」，可选：${FEATURE_KEYS.join(' / ')}`);
+}
+const skip = (k) => SKIP.has(k);
 
 function sleep(ms) { try { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); } catch { } }
 function appRunning() {
@@ -208,6 +224,32 @@ const T_WORK_JS = fs.readFileSync(path.join(HERE, 'inject', 'work-fold.js'), 'ut
 const T_FEAT_JS = fs.readFileSync(path.join(HERE, 'inject', 'feature-panel.js'), 'utf8').trim();
 // 右下角固定的「收起全部」悬浮按钮（只收思考块，跟着 __ocFoldQ$ 走，不随滚动）
 
+// D1 的注入内容按 --skip 动态拼：跳过一个功能就不往 bundle 里塞它的模块。
+// 顺序有要求：feature-panel 必须第一个跑（后面几个模块启动时要读 __ocFeatOn$）。
+// 用函数而不是常量：--skip 可能在版本检测后由「官方日志冲突提示」交互补上，所以要延迟到真正用的时候再拼。
+function buildD1Repl() {
+  // 锚点落在 var 逗号声明列表里，所以第一个注入片段必须是 `name=expr` 形式（ZZ_TRASH_ICON 就是），
+  // 其余 IIFE 必须在 `;` 之后当独立语句，否则会变成 `,(function(){...})()` 直接语法错误。
+  const stmts = [];
+  const avail = [];
+  if (!skip('home-delete')) avail.push('home-delete');
+  if (!skip('time-stats')) avail.push('time');
+  if (!skip('file-reveal')) avail.push('reveal');
+  if (!skip('work-fold')) avail.push('workfold');
+  avail.push('width');
+  if (!skip('feature-panel')) stmts.push(T_FEAT_JS);
+  if (!skip('home-delete')) stmts.push(D_MULTI_JS);
+  if (!skip('time-stats')) stmts.push(T_TIME_JS);
+  if (!skip('file-reveal')) stmts.push(T_FILE_JS);
+  if (!skip('work-fold')) stmts.push(T_WORK_JS);
+  return ',WKt=' + (skip('home-delete') ? '!1' : '!0') + ',GKt=500,KKt=250,qKt=200,JKt=[56,38,66,46,30,52]'
+    + (skip('home-delete') ? '' : ',' + D_TRASH_ICON)
+    + ';'
+    // 开关条只显示「这次真的注入了」的功能，否则会出现按下没反应的死开关
+    + "globalThis.__ocFeatAvail$=['" + avail.join("','") + "'];"
+    + (stmts.length ? stmts.join(';') + ';' : '');
+}
+
 // 主进程：加一个 oc:reveal-path IPC（用 shell.showItemInFolder，正好是「打开目录 + 选中文件」）
 // 不依赖打包后的压缩变量名：动态 import electron，内置模块走 process.getBuiltinModule。
 // 定位顺序（2026-10-28 加强：点了没反应最常见的三种原因都要兜住）：
@@ -251,15 +293,16 @@ const MAIN_REVEAL_JS = ';import("electron").then(function(m){try{m.ipcMain.handl
 // 整轮在 `[data-slot=session-turn-message-container]` 末尾自建 `[data-oc-msg-line]`；
 // 代表消息取行内 `msg_` 前缀 part 中 `time.completed` 最大的那条（行上的 data-message-id 是用户消息 id，
 // 只有 time.created，拿它会一直不显示）。折叠组展开后 text-part-meta 会重新出现，此时走旧路径、跳过回退。
+// 每条规则：[key, 说明, 锚点, 替换]。key 对应 --skip 的功能名。
 const D_RULES = [
-  ['D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 时间/用量/速度/会话统计 + 文件定位 + 工作中展开收起', ',WKt=!1,GKt=500,KKt=250,qKt=200,JKt=[56,38,66,46,30,52];', ',WKt=!0,GKt=500,KKt=250,qKt=200,JKt=[56,38,66,46,30,52],' + D_TRASH_ICON + ';' + T_FEAT_JS + ';' + D_MULTI_JS + ';' + T_TIME_JS + ';' + T_FILE_JS + ';' + T_WORK_JS + ';'],
-  ['D2 tooltip 文案 归档→删除', 'get value(){return e.language.t(`common.archive`)}', 'get value(){return globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`)?e.language.t(`common.archive`):e.language.t(`common.delete`)}'],
-  ['D3 动作标识 home-session-archive→delete', '`home-session-archive`', '`home-session-delete`'],
-  ['D4 图标 归档→垃圾桶 + 注册行→会话映射', 'get icon(){return M(wG,{name:`archive`})}', 'get icon(){return globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`)?M(wG,{name:`archive`}):(globalThis.__ocRegRow$&&globalThis.__ocRegRow$(e.server,e.record.session),globalThis.__ocDeleteApi$=e.onDeleteSession,M(ZZ_TRASH_ICON,{}))}'],
-  ['D5 无障碍标签 归档→删除', 'get"aria-label"(){return e.language.t(`common.archive`)}', 'get"aria-label"(){return globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`)?e.language.t(`common.archive`):e.language.t(`common.delete`)}'],
-  ['D6 点击动作 归档→删除 + Shift 免确认', D_ANCHOR, '(function(){if(globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`))return e.onArchiveSession(e.record.session);var _p=globalThis.__ocSkipConfirm;globalThis.__ocSkipConfirm=!!t.shiftKey;try{e.onDeleteSession(e.server,e.record.session)}finally{globalThis.__ocSkipConfirm=_p}})()'],
-  ['D7 showDelete 支持跳过确认框（走内部删除函数 v）', 'showDelete:(e,t)=>r.show(()=>M(y,{server:e,session:t}))', 'showDelete:(e,t)=>globalThis.__ocSkipConfirm?v(e,t):r.show(()=>M(y,{server:e,session:t}))'],
-  ['D8 会话右键菜单加「多选删除」入口', 'M(U$.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[Zt(()=>e.language.t(`common.delete`)),`…`]}})', 'M(U$.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[Zt(()=>e.language.t(`common.delete`)),`…`]}}),M(U$.Item,{onSelect:()=>globalThis.__ocMultiEnter$(e.server,e.record.session),get children(){return[Jt(()=>"多选删除"),`…`]}})'],
+  [null, 'D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 时间/用量/速度/会话统计 + 文件定位 + 工作中展开收起 + 功能开关条', ',WKt=!1,GKt=500,KKt=250,qKt=200,JKt=[56,38,66,46,30,52];', null],
+  ['home-delete', 'D2 tooltip 文案 归档→删除', 'get value(){return e.language.t(`common.archive`)}', 'get value(){return globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`)?e.language.t(`common.archive`):e.language.t(`common.delete`)}'],
+  ['home-delete', 'D3 动作标识 home-session-archive→delete', '`home-session-archive`', '`home-session-delete`'],
+  ['home-delete', 'D4 图标 归档→垃圾桶 + 注册行→会话映射', 'get icon(){return M(wG,{name:`archive`})}', 'get icon(){return globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`)?M(wG,{name:`archive`}):(globalThis.__ocRegRow$&&globalThis.__ocRegRow$(e.server,e.record.session),globalThis.__ocDeleteApi$=e.onDeleteSession,M(ZZ_TRASH_ICON,{}))}'],
+  ['home-delete', 'D5 无障碍标签 归档→删除', 'get"aria-label"(){return e.language.t(`common.archive`)}', 'get"aria-label"(){return globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`)?e.language.t(`common.archive`):e.language.t(`common.delete`)}'],
+  ['home-delete', 'D6 点击动作 归档→删除 + Shift 免确认', D_ANCHOR, '(function(){if(globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`))return e.onArchiveSession(e.record.session);var _p=globalThis.__ocSkipConfirm;globalThis.__ocSkipConfirm=!!t.shiftKey;try{e.onDeleteSession(e.server,e.record.session)}finally{globalThis.__ocSkipConfirm=_p}})()'],
+  ['home-delete', 'D7 showDelete 支持跳过确认框（走内部删除函数 v）', 'showDelete:(e,t)=>r.show(()=>M(y,{server:e,session:t}))', 'showDelete:(e,t)=>globalThis.__ocSkipConfirm?v(e,t):r.show(()=>M(y,{server:e,session:t}))'],
+  ['home-delete', 'D8 会话右键菜单加「多选删除」入口', 'M(U$.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[Zt(()=>e.language.t(`common.delete`)),`…`]}})', 'M(U$.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[Zt(()=>e.language.t(`common.delete`)),`…`]}}),M(U$.Item,{onSelect:()=>globalThis.__ocMultiEnter$(e.server,e.record.session),get children(){return[Jt(()=>"多选删除"),`…`]}})'],
 ];
 
 function replaceOnce(content, find, repl, label) {
@@ -297,6 +340,41 @@ if (process.argv.includes('--restore')) {
   console.log('已还原官方原版:', ASAR, '(' + fs.statSync(ASAR).size + ' 字节，来源 ' + path.basename(BAK) + ')');
   if (wasRunning) startApp(dir);
   process.exit(0);
+}
+
+// 打补丁前先查官方更新日志：官方已经做了的功能，再补一遍是纯负债（锚点失效 + 行为打架）。
+// 范围是「上次打过补丁的版本 → 当前版本」，因为经常跨好几个版本才重打一次。
+// --skip 显式指定过就不重复问；--no-check 完全跳过；非交互终端只打印提示。
+if (!process.argv.includes('--no-check')) {
+  const { checkUpstream, checkUpstreamRange, versionsBetween, cmpVer, formatReport } = await import('./check-upstream.mjs');
+  // 安装目录里已有的 app.asar.bak-<版本> 就是「以前打过的版本」，取不超过当前版本的最大一个
+  let prev = null;
+  try {
+    const baks = fs.readdirSync(res)
+      .map((n) => /^app\.asar\.bak-(\d+\.\d+\.\d+)$/.exec(n))
+      .filter(Boolean).map((m) => m[1])
+      .filter((v) => cmpVer(v, ver) < 0);
+    baks.sort(cmpVer);
+    prev = baks.length ? baks[baks.length - 1] : null;
+  } catch { }
+  const up = prev ? checkUpstreamRange(versionsBetween(prev, ver)) : checkUpstream(ver);
+  if (prev) console.log(`  检查范围: ${prev} → ${ver}（上次打过补丁的版本起）`);
+  console.log(formatReport(up));
+  const pending = up.ok ? up.conflicts.filter((c) => !SKIP.has(c.key)) : [];
+  if (pending.length && process.stdin.isTTY) {
+    const { createInterface } = await import('node:readline/promises');
+    const rl = createInterface({ input: process.stdin, output: process.stdout });
+    try {
+      for (const c of pending) {
+        const a = await rl.question(`  官方日志疑似已实现「${c.name}」，跳过这个补丁？(y/N) `);
+        if (/^y(es)?$/i.test(a.trim())) { SKIP.add(c.key); console.log(`    → 已跳过 ${c.key}`); }
+      }
+    } finally {
+      rl.close();
+    }
+  } else if (pending.length) {
+    console.log('  （非交互环境，未询问；需要跳过就加 --skip=' + pending.map((c) => c.key).join(',') + '）');
+  }
 }
 
 const cur = fs.readFileSync(ASAR);
@@ -343,46 +421,62 @@ const jobs = [];
 
 // ---- 补丁 2：首页会话行「删除」按钮 ----
 let del = Buffer.from(readEntry(srcParsed, delPath));
-for (const [label, find, repl] of D_RULES) del = replaceOnce(del, find, repl, label);
+for (const [key, label, find, repl] of D_RULES) {
+  if (key && skip(key)) { console.log(`  ${label}: 跳过（--skip=${key}）`); continue; }
+  del = replaceOnce(del, find, repl === null ? buildD1Repl() : repl, label);
+}
 {
   const txt = del.toString('utf8');
-  if (!txt.includes('ZZ_TRASH_ICON')) throw new Error('补丁自检失败：垃圾桶图标没定义');
-  if (!txt.includes('home-session-delete')) throw new Error('补丁自检失败：删除按钮的 data-action 没换掉');
-  if (!txt.includes('e.onDeleteSession(e.server,e.record.session)')) throw new Error('补丁自检失败：删除动作没接上');
-  // 归档动作在「删除按钮」开关关掉时是故意留着当退路的，自检先把自己的 guard 剔掉再看残留
-  const noGuard = txt.split('if(globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`))return e.onArchiveSession(e.record.session);').join('');
-  if (noGuard.includes('e.onArchiveSession(') || noGuard.includes('`home-session-archive`')) throw new Error('补丁自检失败：还残留归档动作');
-  if (!txt.includes('showDelete:(e,t)=>globalThis.__ocSkipConfirm?v(e,t):')) throw new Error('补丁自检失败：showDelete 没有接上跳过确认框的分支');
-  if (!txt.includes('globalThis.__ocMultiEnter$')) throw new Error('补丁自检失败：多选删除入口没注入');
-  if (!txt.includes('__ocRegRow$')) throw new Error('补丁自检失败：会话行→会话映射注册缺失');
-  if (!txt.includes('data-oc-multi')) throw new Error('补丁自检失败：多选工具条没注入');
-  if (!txt.includes('__ocWorkFoldBoot$')) throw new Error('补丁自检失败：「工作中」展开/收起按钮没注入');
-  if (!txt.includes('data-oc-work-fold')) throw new Error('补丁自检失败：「工作中」展开/收起按钮的标记缺失');
-  if (!txt.includes('data-oc-feat-bar')) throw new Error('补丁自检失败：顶部功能开关条没注入');
-  if (!txt.includes('__ocFeatOn$')) throw new Error('补丁自检失败：功能开关的读取函数没注入');
+  const need = (k, cond, msg) => { if (!skip(k) && !cond) throw new Error(msg); };
+  need('home-delete', txt.includes('ZZ_TRASH_ICON'), '补丁自检失败：垃圾桶图标没定义');
+  need('home-delete', txt.includes('home-session-delete'), '补丁自检失败：删除按钮的 data-action 没换掉');
+  need('home-delete', txt.includes('e.onDeleteSession(e.server,e.record.session)'), '补丁自检失败：删除动作没接上');
+  if (!skip('home-delete')) {
+    // 归档动作在「删除按钮」开关关掉时是故意留着当退路的，自检先把自己的 guard 剔掉再看残留
+    const noGuard = txt.split('if(globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`))return e.onArchiveSession(e.record.session);').join('');
+    if (noGuard.includes('e.onArchiveSession(') || noGuard.includes('`home-session-archive`')) throw new Error('补丁自检失败：还残留归档动作');
+    if (!txt.includes('showDelete:(e,t)=>globalThis.__ocSkipConfirm?v(e,t):')) throw new Error('补丁自检失败：showDelete 没有接上跳过确认框的分支');
+    if (!txt.includes('globalThis.__ocMultiEnter$')) throw new Error('补丁自检失败：多选删除入口没注入');
+    if (!txt.includes('__ocRegRow$')) throw new Error('补丁自检失败：会话行→会话映射注册缺失');
+    if (!txt.includes('data-oc-multi')) throw new Error('补丁自检失败：多选工具条没注入');
+  }
+  need('work-fold', txt.includes('__ocWorkFoldBoot$'), '补丁自检失败：「工作中」展开/收起按钮没注入');
+  need('work-fold', txt.includes('data-oc-work-fold'), '补丁自检失败：「工作中」展开/收起按钮的标记缺失');
+  need('feature-panel', txt.includes('data-oc-feat-bar'), '补丁自检失败：顶部功能开关条没注入');
+  need('feature-panel', txt.includes('__ocFeatOn$'), '补丁自检失败：功能开关的读取函数没注入');
+  need('time-stats', txt.includes('__ocTimeBoot$'), '补丁自检失败：时间/用量模块没注入');
+  need('file-reveal', txt.includes('__ocFileBoot$'), '补丁自检失败：文件定位模块没注入');
 }
 jobs.push({ path: delPath, content: del, label: '首页删除按钮' });
 
 // ---- 补丁 3：preload 暴露 revealPath（renderer 侧用 window.electron.revealPath 调） ----
 const PRELOAD_PATH = '/out/preload/index.cjs';
 let pre = Buffer.from(readEntry(srcParsed, PRELOAD_PATH));
-pre = replaceOnce(
-  pre,
-  ',getPathForFile:t=>e.webUtils.getPathForFile(t)});',
-  ',getPathForFile:t=>e.webUtils.getPathForFile(t),revealPath:t=>e.ipcRenderer.invoke("oc:reveal-path",t)});',
-  'F1 preload 暴露 revealPath'
-);
-if (!pre.toString('utf8').includes('oc:reveal-path')) throw new Error('补丁自检失败：preload 没接上 revealPath');
-jobs.push({ path: PRELOAD_PATH, content: pre, label: 'preload 文件定位' });
+if (!skip('file-reveal')) {
+  pre = replaceOnce(
+    pre,
+    ',getPathForFile:t=>e.webUtils.getPathForFile(t)});',
+    ',getPathForFile:t=>e.webUtils.getPathForFile(t),revealPath:t=>e.ipcRenderer.invoke("oc:reveal-path",t)});',
+    'F1 preload 暴露 revealPath'
+  );
+  if (!pre.toString('utf8').includes('oc:reveal-path')) throw new Error('补丁自检失败：preload 没接上 revealPath');
+  jobs.push({ path: PRELOAD_PATH, content: pre, label: 'preload 文件定位' });
+} else {
+  console.log('  F1 preload 暴露 revealPath: 跳过（--skip=file-reveal）');
+}
 
 // ---- 补丁 4：主进程注册 oc:reveal-path（追加到 main chunk 末尾，不依赖压缩变量名） ----
 const MAIN_PATH = '/out/main/index.js';
-let mainBuf = Buffer.from(readEntry(srcParsed, MAIN_PATH));
-const mainTxt = mainBuf.toString('utf8');
-if (!mainTxt.includes('ipcMain')) throw new Error('主进程 chunk 里没找到 ipcMain，锚点结构可能变了');
-mainBuf = Buffer.from(mainTxt + MAIN_REVEAL_JS, 'utf8');
-console.log('  F2 主进程 oc:reveal-path: OK');
-jobs.push({ path: MAIN_PATH, content: mainBuf, label: '主进程文件定位' });
+if (!skip('file-reveal')) {
+  let mainBuf = Buffer.from(readEntry(srcParsed, MAIN_PATH));
+  const mainTxt = mainBuf.toString('utf8');
+  if (!mainTxt.includes('ipcMain')) throw new Error('主进程 chunk 里没找到 ipcMain，锚点结构可能变了');
+  mainBuf = Buffer.from(mainTxt + MAIN_REVEAL_JS, 'utf8');
+  console.log('  F2 主进程 oc:reveal-path: OK');
+  jobs.push({ path: MAIN_PATH, content: mainBuf, label: '主进程文件定位' });
+} else {
+  console.log('  F2 主进程 oc:reveal-path: 跳过（--skip=file-reveal）');
+}
 
 // ---- 重建 asar ----
 // 两个目标必须串行：每替换一个文件都会平移它之后所有文件的 offset，第二次要在上一次的结果上继续。

@@ -18,7 +18,8 @@
 
 | 文件 | 职责 |
 |---|---|
-| `apply-patch.mjs` | 唯一的主脚本：找安装目录 → 定位两个 renderer chunk（+ preload、主进程）→ 打四组补丁 → 串行重建 asar。支持 dry-run / `--out` / `--write` / `--restore` |
+| `check-upstream.mjs` | 查官方 release notes，匹配「官方可能已经实现了这个补丁」的功能；`apply-patch.mjs` 每次运行会自动调用，也支持 `--since` / `--json` / `--strict` 单独跑 |
+| `apply-patch.mjs` | 唯一的主脚本：找安装目录 → 定位两个 renderer chunk（+ preload、主进程）→ 打四组补丁 → 串行重建 asar。支持 dry-run / `--out` / `--write` / `--skip` / `--restore` |
 | `inject/file-reveal.js` | 文件定位补丁的 renderer 注入源码，`apply-patch.mjs` 读进来内联进 chunk（不单独部署） |
 | `inject/feature-panel.js` | 顶部功能开关条（`T_FEAT_JS`）。定义 `__ocFeatOn$(key)` / `__ocFeatSet$(key,on)`，必须最先注入 |
 | `commands/reasoning-patch.md` | `/reasoning-patch` 斜杠命令源文件；`--write` 会自动装到 `~/.config/opencode/commands/` |
@@ -49,13 +50,16 @@
 ## 验证顺序
 
 ```bash
-node apply-patch.mjs            # dry-run：全部锚点 OK 才继续
+node check-upstream.mjs         # 先看官方日志有没有已经做掉的功能（apply-patch 也会自动查）
+node apply-patch.mjs            # dry-run：全部锚点 OK 才继续（有官方冲突会当场问要不要 --skip）
 node apply-patch.mjs --write    # 装（自动关→备份 app.asar.bak-<版本号>→写→开回来）
 node verify.mjs --static        # 34 个标记全绿
 node verify.mjs --delete        # 先切到首页；只查注入，不真删
 node verify.mjs --time          # 时间/速度补丁：首页行时间 + 会话页完成时间 + 速度启动标记
 node sample-speed.mjs           # 趁助手输出时采样实时速度（每 500ms 一次）
 ```
+
+打补丁前先看官方日志：官方某版把功能做掉了就 `--skip=<key>`（`home-delete` / `time-stats` / `file-reveal` / `work-fold` / `feature-panel`）。重复实现只会让锚点更脆、行为互相打架；`--skip` 掉的功能在注入代码里真的不出现，顶部开关条也不再列它。
 
 `verify.mjs` 已经**没有默认行为验证**：思考折叠整块在 2026-10-29 移除，`node verify.mjs` 不带参数只会重复跑静态检查。别照着老流程去验证「思考块折叠」。
 

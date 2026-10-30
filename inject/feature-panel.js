@@ -37,6 +37,11 @@
       ['workfold', '工作中展开'],
       ['width', '正文宽度']
     ];
+    // --skip 掉的功能不注入代码，开关留在条上就是个按了没反应的死按钮
+    if (globalThis.__ocFeatAvail$ && globalThis.__ocFeatAvail$.length) {
+      var avail = globalThis.__ocFeatAvail$;
+      ITEMS = ITEMS.filter(function (x) { return avail.indexOf(x[0]) >= 0; });
+    }
 
     var CSS_ID = 'oc-feat-bar-css';
     function css() {
