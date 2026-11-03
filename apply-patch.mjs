@@ -248,7 +248,14 @@ const T_FEAT_JS = fs.readFileSync(path.join(HERE, 'inject', 'feature-panel.js'),
 // D1 的注入内容按 --skip 动态拼：跳过一个功能就不往 bundle 里塞它的模块。
 // 顺序有要求：feature-panel 必须第一个跑（后面几个模块启动时要读 __ocFeatOn$）。
 // 用函数而不是常量：--skip 可能在版本检测后由「官方日志冲突提示」交互补上，所以要延迟到真正用的时候再拼。
-function buildD1Repl() {
+// D1 锚点落在 `var` 逗号声明列表的尾巴上：`,<a>=!1,<b>=500,<c>=250,<d>=200,<e>=[56,38,66,46,30,52];`
+// 压缩后的变量名每版都变（2.2.2 是 WKt/GKt/…，2.2.3 是 _qt/vqt/…），所以按形状匹配、原样改回去。
+const D1_VARS_RE = /,([A-Za-z0-9_$]+)=!1,([A-Za-z0-9_$]+)=500,([A-Za-z0-9_$]+)=250,([A-Za-z0-9_$]+)=200,([A-Za-z0-9_$]+)=\[56,38,66,46,30,52\];/;
+
+function buildD1Repl(anchor) {
+  const m = D1_VARS_RE.exec(anchor);
+  if (!m) throw new Error('D1 锚点格式不认识：' + anchor);
+  const [, a, b, c, d, e] = m;
   // 锚点落在 var 逗号声明列表里，所以第一个注入片段必须是 `name=expr` 形式（ZZ_TRASH_ICON 就是），
   // 其余 IIFE 必须在 `;` 之后当独立语句，否则会变成 `,(function(){...})()` 直接语法错误。
   const stmts = [];
@@ -276,7 +283,7 @@ function buildD1Repl() {
   if (!skip('pane-tabs')) stmts.push(T_PANETABS_JS);
   if (!skip('session-pin')) stmts.push(T_PIN_JS);
   if (!skip('click-fix')) stmts.push(T_CLICKFIX_JS);
-  return ',WKt=' + (skip('home-delete') ? '!1' : '!0') + ',GKt=500,KKt=250,qKt=200,JKt=[56,38,66,46,30,52]'
+  return ',' + a + '=' + (skip('home-delete') ? '!1' : '!0') + ',' + b + '=500,' + c + '=250,' + d + '=200,' + e + '=[56,38,66,46,30,52]'
     + (skip('home-delete') ? '' : ',' + D_TRASH_ICON)
     + ';'
     // 开关条只显示「这次真的注入了」的功能，否则会出现按下没反应的死开关
@@ -334,32 +341,54 @@ const MAIN_REVEAL_JS = ';import("electron").then(function(m){try{m.ipcMain.handl
 //   b) 首页会话列表的 ContextMenu（U$.Context.Content 里的 U$.Item，只有 归档/删除，props 里**没有** session）
 // 老板截图和日常用的是 b。b 的 props 只有 {archived,onArchive,onUnarchive,onDelete}，拿不到 session.id，
 // 所以置顶项靠 session-pin.js 里 contextmenu 捕获的「当前右键行的标题」来定位会话。
-const D8_MENU_ANCHOR = 'M(U$.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[Zt(()=>e.language.t(`common.delete`)),`…`]}})';
-const CTX_MENU_ANCHOR = 'M(U$.Item,{get onSelect(){return e.onArchive},get children(){return t.t(`common.archive`)}})';
+// 菜单组件命名空间每版都会被重新压缩：2.2.2 是 U$、2.2.3 是 W$，所以锚点统一在运行时按 NS 拼。
+const CTX_NS_RE = /M\(([A-Za-z0-9_$]+)\.Item,\{get onSelect\(\)\{return e\.onArchive\}/;
+function ctxAnchors(NS) {
+  const d8 = 'M(' + NS + '.Item,{onSelect:()=>e.onDeleteSession(e.server,e.record.session),get children(){return[Zt(()=>e.language.t(`common.delete`)),`…`]}})';
+  const ctx = 'M(' + NS + '.Item,{get onSelect(){return e.onArchive},get children(){return t.t(`common.archive`)}})';
+  const item = 'M(' + NS + '.Item,{get onSelect(){return globalThis.__ocPinToggle$&&globalThis.__ocPinToggle$()},get children(){return globalThis.__ocPinLabel$?globalThis.__ocPinLabel$():`置顶`}}),';
+  // Side tabs / Top tabs 的标签右键菜单（另一套 ContextMenu，在标题栏/tab 组件里）：
+  //   M(K$.Item,{get disabled(){return!e.session},onSelect:()=>r(`rename`,!0),get children(){return t.t(`common.rename`)}})
+  // 这里 props 里有 e.session，能直接拿到 id，比首页那套只能靠标题匹配更准。
+  const tabRename = 'M(' + NS + '.Item,{get disabled(){return!e.session},onSelect:()=>r(`rename`,!0),get children(){return t.t(`common.rename`)}})';
+  const tabPin = 'M(' + NS + '.Item,{get disabled(){return!e.session},get onSelect(){return()=>{try{globalThis.__ocPinToggle$&&globalThis.__ocPinToggle$(null,e.session)}catch(_e){}}},get children(){return globalThis.__ocPinLabel$?globalThis.__ocPinLabel$(e.session):`置顶`}}),';
+  return {
+    d8,
+    d8repl: d8 + ',M(' + NS + '.Item,{onSelect:()=>globalThis.__ocMultiEnter$(e.server,e.record.session),get children(){return[Zt(()=>"多选删除"),`…`]}})',
+    p1find: 'get fallback(){return ' + ctx + '}',
+    p1repl: 'get fallback(){return[' + item + ctx + ']}',
+    p2find: tabRename,
+    p2repl: tabPin + tabRename,
+  };
+}
 // 坑：这一项在 `get fallback(){return <单个表达式>}` 里，直接拼两段会被逗号运算符吃掉前一段，
 // 所以必须整段替换 fallback 并包成数组。
-const P1_CTX_ITEM = 'M(U$.Item,{get onSelect(){return globalThis.__ocPinToggle$&&globalThis.__ocPinToggle$()},get children(){return globalThis.__ocPinLabel$?globalThis.__ocPinLabel$():`置顶`}}),';
-const P1_CTX_FIND = 'get fallback(){return ' + CTX_MENU_ANCHOR + '}';
-const P1_CTX_REPL = 'get fallback(){return[' + P1_CTX_ITEM + CTX_MENU_ANCHOR + ']}';
-
-const D_RULES = [
-  [null, 'D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 时间/用量/速度/会话统计 + 文件定位 + 工作中展开收起 + 功能开关条', ',WKt=!1,GKt=500,KKt=250,qKt=200,JKt=[56,38,66,46,30,52];', null],
+function buildDRules(A) {
+  return [
+  [null, 'D1 打开写死的按钮开关 + 垃圾桶图标 + 注入多选删除 UI + 时间/用量/速度/会话统计 + 文件定位 + 工作中展开收起 + 功能开关条', null, null],
   ['home-delete', 'D2 tooltip 文案 归档→删除', 'get value(){return e.language.t(`common.archive`)}', 'get value(){return globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`)?e.language.t(`common.archive`):e.language.t(`common.delete`)}'],
   ['home-delete', 'D3 动作标识 home-session-archive→delete', '`home-session-archive`', '`home-session-delete`'],
-  ['home-delete', 'D4 图标 归档→垃圾桶 + 注册行→会话映射', 'get icon(){return M(wG,{name:`archive`})}', 'get icon(){return globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`)?M(wG,{name:`archive`}):(globalThis.__ocRegRow$&&globalThis.__ocRegRow$(e.server,e.record.session),globalThis.__ocDeleteApi$=e.onDeleteSession,M(ZZ_TRASH_ICON,{}))}'],
+  ['home-delete', 'D4 图标 归档→垃圾桶 + 注册行→会话映射', /get icon\(\)\{return ([A-Za-z0-9_$]+)\(([A-Za-z0-9_$]+),\{name:`archive`\}\)\}/, (m) => {
+    // 组件名（M）与图标名（wG/DG/…）每版都被重新压缩，按形状取当前版的写法
+    var fn = m[1], icon = m[2], call = fn + '(' + icon + ',{name:`archive`})';
+    return 'get icon(){return globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`)?' + call + ':(globalThis.__ocRegRow$&&globalThis.__ocRegRow$(e.server,e.record.session),globalThis.__ocDeleteApi$=e.onDeleteSession,' + fn + '(ZZ_TRASH_ICON,{}))}';
+  }],
   ['home-delete', 'D5 无障碍标签 归档→删除', 'get"aria-label"(){return e.language.t(`common.archive`)}', 'get"aria-label"(){return globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`)?e.language.t(`common.archive`):e.language.t(`common.delete`)}'],
   ['home-delete', 'D6 点击动作 归档→删除 + Shift 免确认', D_ANCHOR, '(function(){if(globalThis.__ocFeatOn$&&!globalThis.__ocFeatOn$(`home-delete`))return e.onArchiveSession(e.record.session);var _p=globalThis.__ocSkipConfirm;globalThis.__ocSkipConfirm=!!t.shiftKey;try{e.onDeleteSession(e.server,e.record.session)}finally{globalThis.__ocSkipConfirm=_p}})()'],
   ['home-delete', 'D7 showDelete 支持跳过确认框（走内部删除函数 v）', 'showDelete:(e,t)=>r.show(()=>M(y,{server:e,session:t}))', 'showDelete:(e,t)=>globalThis.__ocSkipConfirm?v(e,t):r.show(()=>M(y,{server:e,session:t}))'],
-  ['session-pin', 'P1 首页会话右键菜单加「置顶 / 取消置顶」', P1_CTX_FIND, P1_CTX_REPL],
-  ['home-delete', 'D8 会话右键菜单加「多选删除」入口', D8_MENU_ANCHOR, D8_MENU_ANCHOR + ',M(U$.Item,{onSelect:()=>globalThis.__ocMultiEnter$(e.server,e.record.session),get children(){return[Zt(()=>"多选删除"),`…`]}})'],
-];
+  ['session-pin', 'P1 首页会话右键菜单加「置顶 / 取消置顶」', A.p1find, A.p1repl],
+  ['session-pin', 'P2 标签右键菜单（Side tabs/Top tabs）加「置顶 / 取消置顶」', A.p2find, A.p2repl],
+  ['home-delete', 'D8 会话右键菜单加「多选删除」入口', A.d8, A.d8repl],
+  ];
+}
 
 function replaceOnce(content, find, repl, label) {
   const s = content.toString('utf8');
   if (find instanceof RegExp) {
     const m = s.match(find);
     if (!m) throw new Error(label + '：锚点没找到（新版本代码结构可能变了，需要先看 bundle 再改锚点）');
-    const out = s.replace(find, repl(m));
+    // 用函数替换：锚点/repl 里常有 `__ocFeatOn$` 这种 `$&` 序列，直接传字符串会被当成替换模式插进匹配文本
+    const out = s.replace(find, () => repl(m));
     console.log(`  ${label}: OK`);
     return Buffer.from(out, 'utf8');
   }
@@ -470,9 +499,17 @@ const jobs = [];
 
 // ---- 补丁 2：首页会话行「删除」按钮 ----
 let del = Buffer.from(readEntry(srcParsed, delPath));
-for (const [key, label, find, repl] of D_RULES) {
+const ctxNs = (CTX_NS_RE.exec(del.toString('utf8')) || [])[1] || 'U$';
+for (const [key, label, find, repl] of buildDRules(ctxAnchors(ctxNs))) {
   if (key && skip(key)) { console.log(`  ${label}: 跳过（--skip=${key}）`); continue; }
-  del = replaceOnce(del, find, repl === null ? buildD1Repl() : repl, label);
+  if (find === null) {
+    // D1：锚点整段由形状匹配得到，repl 用同样的变量名重建
+    const m = D1_VARS_RE.exec(del.toString('utf8'));
+    if (!m) throw new Error(label + '：锚点没找到（新版本代码结构可能变了）');
+    del = replaceOnce(del, m[0], buildD1Repl(m[0]), label);
+    continue;
+  }
+  del = replaceOnce(del, find, repl, label);
 }
 {
   const txt = del.toString('utf8');

@@ -24,7 +24,10 @@
   globalThis.__ocPinBoot$ = 1;
 
   var KEY = 'oc-pin-sessions';
-  var ROW = '[data-slot="sidebar-inbox-item"]';
+  // 两套布局的行：Inbox 的会话行 / Side tabs·Top tabs 的标签项（2.2.5 起侧栏标签是
+  // [data-slot=titlebar-tab-item]，里面套 [data-slot=tab-link]）
+  var ROWS = ['[data-slot="sidebar-inbox-item"]', '[data-slot="titlebar-tab-item"]'];
+  var ROW = ROWS.join(',');
   var ORDER_BASE = -1000;
   var boots = 0;
 
@@ -47,17 +50,34 @@
     var s = document.createElement('style');
     s.id = id;
     s.textContent = [
-      ROW + '[data-oc-pinned]{box-shadow:inset 2px 0 0 #6366f1}',
-      ROW + '[data-oc-pinned] span[dir="auto"]{color:inherit}'
+      '[data-oc-pinned]{box-shadow:inset 2px 0 0 #6366f1}',
+      '[data-slot="sidebar-inbox-item"][data-oc-pinned] span[dir="auto"]{color:inherit}'
     ].join('');
     (document.head || document.documentElement).appendChild(s);
   }
 
   function titleOf(item) {
+    var t = item.querySelector('[data-slot="tab-title"]');
+    if (t) return (t.textContent || '').trim();
     var s = item.querySelector('span[dir="auto"]');
     if (s) return (s.textContent || '').trim();
     var all = item.querySelectorAll('span');
     return all.length ? (all[all.length - 1].textContent || '').trim() : '';
+  }
+
+  // 标签项外面还套着两层 row wrapper，真正参与纵向排列的是再上一层 column 容器，
+  // 所以 order 必须设在「column 容器的直接子元素」上（通常就是 item 的祖父）。
+  // Top tabs 下整条是横向 row：找不到 column 容器，退回 item（横向 order 也能生效）。
+  function orderTarget(item) {
+    var el = item;
+    for (var i = 0; i < 6 && el && el.parentElement; i++) {
+      var p = el.parentElement;
+      var cs = null;
+      try { cs = getComputedStyle(p); } catch (e) {}
+      if (cs && cs.display.indexOf('flex') >= 0 && cs.flexDirection === 'column') return el;
+      el = p;
+    }
+    return item;
   }
 
   function pinIndexOf(session) {
@@ -75,12 +95,13 @@
       var idx = -1;
       for (var k = 0; k < pins.length; k++) if (!used[k] && pins[k].title === t) { idx = k; break; }
       if (idx >= 0) used[idx] = 1;
+      var box = orderTarget(it);
       if (idx >= 0) {
         var val = String(ORDER_BASE + idx);
-        if (it.style.order !== val) it.style.order = val;
+        if (box.style.order !== val) box.style.order = val;
         if (it.getAttribute('data-oc-pinned') !== '1') it.setAttribute('data-oc-pinned', '1');
       } else {
-        if (it.style.order) it.style.order = '';
+        if (box.style.order) box.style.order = '';
         if (it.hasAttribute('data-oc-pinned')) it.removeAttribute('data-oc-pinned');
       }
     }
