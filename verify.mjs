@@ -185,6 +185,9 @@ if (process.argv.includes('--reason-dbl')) {
     await sleep(500);
     const after = b.getAttribute('aria-expanded');
     // 正文里的双击也折叠（老板 2026-10-30 要求：整个思考块都能双击）
+    // 注意：标题行的三连可能刚把块折起来了，折叠态正文会被卸载，所以先按需要重新展开，
+    // 否则 body 找不到、bodyDblFlipped 恒 false，会误报「双击折叠没生效」。
+    if (b.getAttribute('aria-expanded') !== 'true') { fire('click', 1); await sleep(500); }
     const body = b.closest('[data-component="reasoning-part"]').querySelector('[data-component="markdown"], p');
     let bodyAfter = null;
     if (body) {
